@@ -3,12 +3,7 @@
 
   const STORAGE_KEY = "liquan_mahjong_session";
   const INITIAL_SCORE = 20;
-
-  const CARDS = [
-    "1万", "2万", "3万", "4万", "5万", "6万", "7万", "8万", "9万",
-    "1条", "2条", "3条", "4条", "5条", "6条", "7条", "8条", "9条",
-    "1筒", "2筒", "3筒", "4筒", "5筒", "6筒", "7筒", "8筒", "9筒",
-  ];
+  const SEAT_LABELS = ["东", "南", "西", "北"];
 
   const FAN_TYPES = [
     { id: "putong", name: "普通胡", score: 2 },
@@ -21,19 +16,6 @@
     { id: "jingoudiao", name: "金钩吊", score: 5 },
     { id: "qingqidui", name: "清七对", score: 7 },
   ];
-
-  function getChickenCard(flipped) {
-    const match = flipped.match(/^([1-9])([万条筒])$/);
-    if (!match) return null;
-    const num = parseInt(match[1], 10);
-    const suit = match[2];
-    const nextNum = num === 9 ? 1 : num + 1;
-    return nextNum + suit;
-  }
-
-  function isGoldenChicken(chickenCard) {
-    return chickenCard === "1条";
-  }
 
   function saveSession(session) {
     try {
@@ -53,8 +35,9 @@
   }
 
   function init() {
+    setupPlayerCountToggle();
     const existing = loadSession();
-    if (existing && existing.players && existing.players.length === 4) {
+    if (existing && existing.players && existing.players.length >= 4) {
       existing.playerCount = existing.playerCount ?? existing.players.length;
       existing.initialScore = existing.initialScore ?? INITIAL_SCORE;
       startGame(existing);
@@ -73,16 +56,17 @@
     document.getElementById("new-session-form").addEventListener("submit", (e) => {
       e.preventDefault();
       const form = e.target;
+      const playerCount = parseInt(document.getElementById("player-count")?.value || "4", 10) || 4;
       const initialScore = parseInt(form.elements.initialScore.value, 10) || INITIAL_SCORE;
       const players = [];
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < playerCount; i++) {
         const val = form.elements["p" + i]?.value?.trim();
         players.push(val || "玩家" + (i + 1));
       }
       const session = {
         id: Date.now().toString(),
         createdAt: new Date().toISOString(),
-        playerCount: 4,
+        playerCount,
         initialScore,
         players,
         rounds: [],
@@ -92,21 +76,119 @@
     });
   }
 
+  function setupPlayerCountToggle() {
+    const countSel = document.getElementById("player-count");
+    const container = document.getElementById("player-inputs");
+    if (!countSel || !container) return;
+    const sync = () => {
+      const n = parseInt(countSel.value, 10) || 4;
+      container.innerHTML = [...Array(n)]
+        .map(
+          (_, i) =>
+            `<label><span>玩家${i + 1}</span><input type="text" class="player-name-input" name="p${i}" placeholder="玩家${i + 1}"></label>`
+        )
+        .join("");
+    };
+    countSel.addEventListener("change", sync);
+    sync();
+  }
+
   function startGame(session) {
     document.getElementById("session-setup").classList.add("hidden");
     document.getElementById("game-panel").classList.remove("hidden");
 
     const state = { session };
+    renderTablePlayersRow(state);
     renderScoreboard(state);
     renderWinForm(state);
     renderLiujuForm(state);
     bindRoundForms(state);
-    bindRoundTypeTabs();
+    bindRoundTypeTabs(state);
     bindWinTypeToggle(state);
     bindPenaltyTabs();
+    bindChickenModeTabs();
     bindChickenToggle(state);
+    bindKongButtons(state);
+    bindLiveSummary(state);
+    bindUndoRound(state);
     renderHistory(state);
+    renderRoundSummary(state);
+  }
 
+  function getTablePlayers(state) {
+    const n = state.session.players.length;
+    if (n === 4) return [0, 1, 2, 3];
+    const row = document.getElementById("table-player-seats");
+    if (!row) return [0, 1, 2, 3];
+    const selected = SEAT_LABELS.map((_, seatIdx) => {
+      const select = row.querySelector(`select[name="seatPlayer_${seatIdx}"]`);
+      return parseInt(select?.value, 10);
+    }).filter((value) => !Number.isNaN(value));
+    return [...new Set(selected)].length === 4 ? selected : [0, 1, 2, 3];
+  }
+
+  function getSeatAssignments(state) {
+    const players = getTablePlayers(state);
+    return SEAT_LABELS.map((seat, idx) => ({ seat, playerIndex: players[idx] }));
+  }
+
+  function renderTablePlayersRow(state) {
+    const row = document.getElementById("table-players-row");
+    const container = document.getElementById("table-player-seats");
+    if (!row || !container) return;
+    const n = state.session.players.length;
+    row.classList.toggle("hidden", n <= 4);
+    if (n <= 4) return;
+    const current = getTablePlayers(state);
+    container.innerHTML = SEAT_LABELS.map((seat, seatIdx) => {
+      const options = state.session.players
+        .map((name, playerIdx) => `<option value="${playerIdx}" ${current[seatIdx] === playerIdx ? "selected" : ""}>${escapeHtml(name)}</option>`)
+        .join("");
+      return `<div class="seat-card">
+        <span class="seat-badge">${seat}位</span>
+        <div class="seat-preview">${escapeHtml(state.session.players[current[seatIdx]] || "")}</div>
+        <label>选择玩家</label>
+        <select name="seatPlayer_${seatIdx}">${options}</select>
+      </div>`;
+    }).join("");
+    if (!container.dataset.bound) {
+      container.dataset.bound = "1";
+      container.addEventListener("change", (e) => {
+        if (e.target.name.startsWith("seatPlayer_")) {
+          normalizeSeatSelection(container);
+          syncSeatPreview(container, state.session.players);
+          renderWinForm(state);
+          renderLiujuForm(state);
+          renderRoundSummary(state);
+        }
+      });
+    }
+    syncSeatPreview(container, state.session.players);
+  }
+
+  function normalizeSeatSelection(container) {
+    const selects = Array.from(container.querySelectorAll('select[name^="seatPlayer_"]'));
+    const used = new Set();
+    selects.forEach((select) => {
+      if (!used.has(select.value)) {
+        used.add(select.value);
+        return;
+      }
+      const fallback = Array.from(select.options).find((option) => !used.has(option.value));
+      if (fallback) {
+        select.value = fallback.value;
+        used.add(fallback.value);
+      }
+    });
+  }
+
+  function syncSeatPreview(container, players) {
+    Array.from(container.querySelectorAll(".seat-card")).forEach((card, idx) => {
+      const select = card.querySelector(`select[name="seatPlayer_${idx}"]`);
+      const preview = card.querySelector(".seat-preview");
+      if (!select || !preview) return;
+      preview.textContent = players[parseInt(select.value, 10)] || "";
+    });
   }
 
   function getTotals(session) {
@@ -120,19 +202,30 @@
   function renderScoreboard(state) {
     const { session } = state;
     const totals = getTotals(session);
-    const n = session.players.length;
-
+    const latestRound = session.rounds[session.rounds.length - 1];
+    const seatAssignments = getSeatAssignments(state);
+    const subtitle = document.getElementById("scoreboard-subtitle");
+    if (subtitle) {
+      subtitle.textContent = session.rounds.length
+        ? `已记录 ${session.rounds.length} 局，最近一局：${formatRoundSummary(session, latestRound, session.rounds.length)}`
+        : "新大局已开始";
+    }
     const el = document.getElementById("total-scores");
     el.innerHTML = totals
       .map((score, i) => {
+        const delta = latestRound ? latestRound.scores[i] || 0 : 0;
+        const seat = seatAssignments.find((item) => item.playerIndex === i)?.seat;
         let cls = "score-item";
-        if (score <= 0) cls += " danger";
+        if (score <= 0) cls += " danger busted";
         else if (score > 0) cls += " positive";
         else cls += " negative";
-        if (score === 0) cls += " zero";
         return `<div class="${cls}">
-          <span class="name">${escapeHtml(session.players[i])}</span>
+          <div class="score-top">
+            <span class="name">${escapeHtml(session.players[i])}</span>
+            <span class="seat-tag">${seat ? `${seat}位` : `P${i + 1}`}</span>
+          </div>
           <span class="value">${score}</span>
+          <span class="delta ${deltaClass(delta)}">${deltaLabel(delta)}</span>
         </div>`;
       })
       .join("");
@@ -141,16 +234,16 @@
   function renderWinForm(state) {
     const { session } = state;
     const players = session.players;
-    const n = players.length;
+    const tablePlayers = getTablePlayers(state);
 
     const fillSelect = (selId, exclude) => {
       const sel = document.querySelector(selId);
       if (!sel) return;
-      sel.innerHTML = players
-        .map((name, i) =>
+      sel.innerHTML = tablePlayers
+        .map((i) =>
           exclude !== undefined && i === exclude
             ? ""
-            : `<option value="${i}">${escapeHtml(name)}</option>`
+            : `<option value="${i}">${escapeHtml(players[i])}</option>`
         )
         .filter(Boolean)
         .join("");
@@ -159,49 +252,224 @@
     fillSelect("#win-form select[name=feeder]");
 
     const winnerEl = document.getElementById("winner-checkboxes");
-    winnerEl.innerHTML = players
+    winnerEl.innerHTML = tablePlayers
       .map(
-        (name, i) =>
-          `<label><input type="checkbox" name="winner" value="${i}">${escapeHtml(name)}</label>`
+        (i) =>
+          `<label><input type="checkbox" name="winner" value="${i}">${escapeHtml(players[i])}</label>`
       )
       .join("");
 
     updatePenaltyInputs(state);
 
     const tianqueEl = document.getElementById("tianque-checkboxes");
-    tianqueEl.innerHTML = players
+    tianqueEl.innerHTML = tablePlayers
       .map(
-        (name, i) =>
-          `<label><input type="checkbox" name="tianque" value="${i}">${escapeHtml(name)}</label>`
-      )
-      .join("");
-
-    const tingEl = document.getElementById("ting-checkboxes");
-    tingEl.innerHTML = players
-      .map(
-        (name, i) =>
-          `<label><input type="checkbox" name="ting" value="${i}">${escapeHtml(name)}</label>`
+        (i) =>
+          `<label><input type="checkbox" name="tianque" value="${i}">${escapeHtml(players[i])}</label>`
       )
       .join("");
 
     updateFanSelects(state);
     updateChickenInputs(state);
+    renderKongList(state, "kong-list", tablePlayers);
+  }
 
-    const flippedEl = document.querySelector("#win-form select[name=flippedCard]");
-    if (flippedEl && !flippedEl.options.length) {
-      flippedEl.innerHTML = CARDS.map((c) => `<option value="${c}">${c}</option>`).join("");
-    }
+  function bindChickenModeTabs() {
+    const modeInput = document.querySelector('#win-form input[name="chickenMode"]');
+    const tabs = document.querySelectorAll(".chicken-mode-tabs .tab");
+    if (!modeInput || !tabs.length) return;
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const val = btn.dataset.chicken;
+        modeInput.value = val;
+        tabs.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
   }
 
   function renderLiujuForm(state) {
     const { session } = state;
+    const tablePlayers = getTablePlayers(state);
     const el = document.getElementById("liuju-ting-checkboxes");
-    el.innerHTML = session.players
+    el.innerHTML = tablePlayers
       .map(
-        (name, i) =>
-          `<label><input type="checkbox" name="ting" value="${i}">${escapeHtml(name)}</label>`
+        (i) =>
+          `<label><input type="checkbox" name="ting" value="${i}">${escapeHtml(session.players[i])}</label>`
       )
       .join("");
+    renderKongList(state, "liuju-kong-list", tablePlayers);
+  }
+
+  function renderRoundSummary(state) {
+    const el = document.getElementById("round-summary");
+    if (!el || !state?.session) return;
+    const tablePlayers = getTablePlayers(state);
+    const tableNames = tablePlayers.map((i) => state.session.players[i]);
+    const seatNames = getSeatAssignments(state).map(({ seat, playerIndex }) => `${seat}位 ${state.session.players[playerIndex]}`);
+    const activeType = document.querySelector(".round-type-tabs .tab.active")?.dataset.type || "win";
+    let main = "";
+    const chips = [`上场：${tableNames.join("、")}`, ...seatNames];
+
+    if (activeType === "liuju") {
+      const ting = Array.from(document.querySelectorAll('#liuju-ting-checkboxes input[name="ting"]:checked')).map((c) =>
+        state.session.players[parseInt(c.value, 10)]
+      );
+      const liujuKongs = document.querySelectorAll("#liuju-kong-list .kong-item").length;
+      main = ting.length ? `流局，${ting.join("、")} 听牌` : "流局，待选择听牌者";
+      if (liujuKongs) chips.push(`杠牌 ${liujuKongs} 条`);
+    } else {
+      const winType = document.querySelector('#win-form input[name="winType"]')?.value || "zimo";
+      const winners = Array.from(document.querySelectorAll('#winner-checkboxes input[name="winner"]:checked')).map((c) =>
+        parseInt(c.value, 10)
+      );
+      const winnerNames = winners.map((i) => state.session.players[i]);
+      const feederIdx = parseInt(document.querySelector('#win-form select[name="feeder"]')?.value, 10);
+      const feederName = Number.isNaN(feederIdx) ? "" : state.session.players[feederIdx];
+      const chickenMode = document.querySelector('#win-form input[name="chickenMode"]')?.value === "yes";
+      const penaltyMode = document.querySelector('#win-form input[name="penaltyMode"]')?.value === "yes";
+      const kongCount = document.querySelectorAll("#kong-list .kong-item").length;
+      const tianque = Array.from(document.querySelectorAll('#tianque-checkboxes input[name="tianque"]:checked')).map((c) =>
+        state.session.players[parseInt(c.value, 10)]
+      );
+      if (!winnerNames.length) {
+        main = winType === "dianpao" ? "点炮局，待选择胡牌者和点炮者" : "自摸局，待选择胡牌者";
+      } else if (winType === "dianpao") {
+        main = `${winnerNames.join("、")} 点炮胡牌${feederName ? `，点炮者 ${feederName}` : ""}`;
+      } else {
+        main = `${winnerNames.join("、")} 自摸`;
+      }
+      chips.push(`方式：${winType === "dianpao" ? "点炮" : "自摸"}`);
+      if (tianque.length) chips.push(`天缺：${tianque.join("、")}`);
+      if (penaltyMode) chips.push("查缺已开启");
+      if (chickenMode) chips.push("金鸡 x2");
+      if (kongCount) chips.push(`杠牌 ${kongCount} 条`);
+    }
+
+    el.innerHTML = `
+      <p class="round-summary-title">当前录入摘要</p>
+      <p class="round-summary-main">${escapeHtml(main)}</p>
+      <div class="round-summary-meta">
+        ${chips.map((chip) => `<span class="round-summary-chip">${escapeHtml(chip)}</span>`).join("")}
+      </div>
+    `;
+  }
+
+  function appendKongItem(listEl, tablePlayers, players) {
+    const item = document.createElement("div");
+    item.className = "kong-item";
+    const opts = tablePlayers.map((i) => `<option value="${i}">${players[i]}</option>`).join("");
+    item.innerHTML = `
+      <div class="kong-main">
+        <label class="kong-field">
+          <span class="kong-label">谁杠了</span>
+          <select name="konger">${opts}</select>
+        </label>
+        <div class="kong-field">
+          <span class="kong-label">杠类型</span>
+          <div class="kong-type-toggle">
+            <button type="button" class="tab active" data-kong-type="zigang">自杠</button>
+            <button type="button" class="tab" data-kong-type="fanggang">放杠</button>
+          </div>
+          <input type="hidden" name="kongType" class="kong-type-select" value="zigang">
+        </div>
+        <label class="kong-field kong-feeder-field hidden">
+          <span class="kong-label">谁放的</span>
+          <select name="kongFeeder" class="kong-feeder-select">
+            <option value="">请选择</option>
+            ${tablePlayers.map((i) => `<option value="${i}">${players[i]}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <button type="button" class="btn-remove btn-ghost">删除</button>
+    `;
+    const typeSel = item.querySelector(".kong-type-select");
+    const feederField = item.querySelector(".kong-feeder-field");
+    const feederSel = item.querySelector(".kong-feeder-select");
+    const typeButtons = item.querySelectorAll(".kong-type-toggle .tab");
+    const updateFeeder = () => {
+      feederField.classList.toggle("hidden", typeSel.value !== "fanggang");
+      if (typeSel.value !== "fanggang" && feederSel) feederSel.value = "";
+    };
+    typeButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        typeSel.value = btn.dataset.kongType;
+        typeButtons.forEach((node) => node.classList.toggle("active", node === btn));
+        updateFeeder();
+      });
+    });
+    item.querySelector(".btn-remove").addEventListener("click", () => item.remove());
+    updateFeeder();
+    listEl.appendChild(item);
+  }
+
+  function renderKongList(state, listId, tablePlayers) {
+    const listEl = document.getElementById(listId);
+    if (!listEl) return;
+    const current = collectKongs(listId).filter((item) => tablePlayers.includes(item.konger));
+    listEl.innerHTML = "";
+    current.forEach((kong) => {
+      appendKongItem(listEl, tablePlayers, state.session.players);
+      const row = listEl.lastElementChild;
+      if (!row) return;
+      row.querySelector('select[name="konger"]').value = String(kong.konger);
+      row.querySelector('input[name="kongType"]').value = kong.type;
+      row.querySelectorAll(".kong-type-toggle .tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.kongType === kong.type);
+      });
+      const feederSel = row.querySelector('select[name="kongFeeder"]');
+      if (kong.type === "fanggang" && feederSel) {
+        row.querySelector(".kong-feeder-field")?.classList.remove("hidden");
+        feederSel.value = String(kong.feeder);
+      }
+    });
+  }
+
+  function bindKongButtons(state) {
+    document.getElementById("add-kong-btn")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const tablePlayers = getTablePlayers(state);
+      const list = document.getElementById("kong-list");
+      if (list) appendKongItem(list, tablePlayers, state.session.players);
+      renderRoundSummary(state);
+    });
+    document.getElementById("add-liuju-kong-btn")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const tablePlayers = getTablePlayers(state);
+      const list = document.getElementById("liuju-kong-list");
+      if (list) appendKongItem(list, tablePlayers, state.session.players);
+      renderRoundSummary(state);
+    });
+  }
+
+  function bindLiveSummary(state) {
+    const panel = document.querySelector(".round-entry");
+    if (!panel) return;
+    const schedule = () => window.requestAnimationFrame(() => renderRoundSummary(state));
+    panel.addEventListener("change", schedule);
+    panel.addEventListener("input", schedule);
+    panel.addEventListener("click", schedule);
+  }
+
+  function bindUndoRound(state) {
+    const btn = document.getElementById("undo-round-btn");
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      if (!state.session.rounds.length) return;
+      if (!confirm("确定撤销上一局吗？")) return;
+      state.session.rounds.pop();
+      state.lastRound = state.session.rounds[state.session.rounds.length - 1] || null;
+      saveSession(state.session);
+      document.getElementById("game-over-overlay").classList.add("hidden");
+      document.querySelector(".round-result").classList.add("hidden");
+      document.querySelector(".round-entry").classList.remove("hidden");
+      renderScoreboard(state);
+      renderHistory(state);
+      renderWinForm(state);
+      renderLiujuForm(state);
+      renderRoundSummary(state);
+    });
   }
 
   function updatePenaltyInputs(state) {
@@ -210,8 +478,9 @@
     const winners = Array.from(document.querySelectorAll('#winner-checkboxes input[name="winner"]:checked')).map(
       (c) => parseInt(c.value, 10)
     );
+    const tablePlayers = getTablePlayers(state);
+    const nonWinners = tablePlayers.filter((i) => !winners.includes(i));
     const players = state.session.players;
-    const nonWinners = [...Array(players.length)].map((_, i) => i).filter((i) => !winners.includes(i));
     penaltyEl.innerHTML = nonWinners
       .map(
         (i) =>
@@ -246,13 +515,9 @@
 
   function updateChickenInputs(state) {
     const chickenEl = document.getElementById("chicken-inputs");
-    const chickenGroup = document.querySelector(".chicken-group");
     if (!chickenEl || !state?.session) return;
-    const ting = Array.from(document.querySelectorAll('#ting-checkboxes input[name="ting"]:checked')).map((c) =>
-      parseInt(c.value, 10)
-    );
-    chickenGroup?.classList.toggle("hidden", ting.length === 0);
-    chickenEl.innerHTML = ting
+    const tablePlayers = getTablePlayers(state);
+    chickenEl.innerHTML = tablePlayers
       .map(
         (i) =>
           `<label>${escapeHtml(state.session.players[i])} <input type="number" name="chicken_${i}" min="0" value="0"></label>`
@@ -261,12 +526,7 @@
   }
 
   function bindChickenToggle(state) {
-    const chickenGroup = document.querySelector(".chicken-group");
-    if (!chickenGroup) return;
     document.getElementById("win-form")?.addEventListener("change", (e) => {
-      if (e.target.name === "ting") {
-        updateChickenInputs(state);
-      }
       if (e.target.name === "winner") {
         updateFanSelects(state);
         updatePenaltyInputs(state);
@@ -277,19 +537,20 @@
   function bindPenaltyTabs() {
     const row = document.querySelector(".penalty-row");
     const modeInput = document.querySelector('#win-form input[name="penaltyMode"]');
-    if (!row || !modeInput) return;
-    document.querySelectorAll(".penalty-tabs .tab").forEach((btn) => {
+    const tabs = document.getElementById("penalty-mode-tabs");
+    if (!row || !modeInput || !tabs) return;
+    tabs.querySelectorAll(".tab").forEach((btn) => {
       btn.addEventListener("click", () => {
         const val = btn.dataset.penalty;
         modeInput.value = val;
-        document.querySelectorAll(".penalty-tabs .tab").forEach((b) => b.classList.remove("active"));
+        tabs.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         row.classList.toggle("hidden", val !== "yes");
       });
     });
   }
 
-  function bindRoundTypeTabs() {
+  function bindRoundTypeTabs(state) {
     document.querySelectorAll(".round-type-tabs .tab").forEach((btn) => {
       btn.addEventListener("click", () => {
         const type = btn.dataset.type;
@@ -297,6 +558,9 @@
         btn.classList.add("active");
         document.getElementById("win-form").classList.toggle("hidden", type !== "win");
         document.getElementById("liuju-form").classList.toggle("hidden", type !== "liuju");
+        if (type === "win") renderWinForm(state);
+        else renderLiujuForm(state);
+        renderRoundSummary(state);
       });
     });
   }
@@ -312,8 +576,10 @@
         .filter((c) => c.checked)
         .map((c) => parseInt(c.value, 10));
       if (!feederSel || !state?.session) return;
-      feederSel.innerHTML = state.session.players
-        .map((name, i) => (winners.includes(i) ? "" : `<option value="${i}">${escapeHtml(name)}</option>`))
+      const tablePlayers = getTablePlayers(state);
+      feederSel.innerHTML = tablePlayers
+        .map((i) => ({ index: i, name: state.session.players[i] }))
+        .map(({ index, name }) => (winners.includes(index) ? "" : `<option value="${index}">${escapeHtml(name)}</option>`))
         .filter(Boolean)
         .join("");
     };
@@ -363,6 +629,8 @@
       document.querySelector(".round-entry").classList.remove("hidden");
       document.getElementById("win-form").reset();
       document.getElementById("liuju-form").reset();
+      document.getElementById("kong-list").innerHTML = "";
+      document.getElementById("liuju-kong-list").innerHTML = "";
       document.querySelector(".round-type-tabs .tab[data-type=win]").classList.add("active");
       document.querySelector(".round-type-tabs .tab[data-type=liuju]").classList.remove("active");
       document.getElementById("win-form").classList.remove("hidden");
@@ -372,12 +640,17 @@
       document.querySelector(".penalty-tabs .tab[data-penalty=no]")?.classList.add("active");
       document.querySelector(".penalty-tabs .tab[data-penalty=yes]")?.classList.remove("active");
       document.querySelector('#win-form input[name="penaltyMode"]').value = "no";
-      document.querySelector(".chicken-group")?.classList.add("hidden");
       document.querySelectorAll(".win-type-tabs .tab").forEach((b) => b.classList.remove("active"));
       document.querySelector(".win-type-tabs .tab[data-wintype=zimo]")?.classList.add("active");
       document.querySelector("#win-form input[name=winType]").value = "zimo";
+      document.querySelector('#win-form input[name="chickenMode"]').value = "no";
+      document.querySelectorAll(".chicken-mode-tabs .tab").forEach((b) => b.classList.remove("active"));
+      document.querySelector(".chicken-mode-tabs .tab[data-chicken=no]")?.classList.add("active");
+      renderTablePlayersRow(state);
       renderWinForm(state);
+      renderLiujuForm(state);
       renderScoreboard(state);
+      renderRoundSummary(state);
     });
 
     document.getElementById("game-over-confirm").addEventListener("click", () => {
@@ -390,6 +663,7 @@
       renderHistory(state);
       document.querySelector(".round-result").classList.add("hidden");
       document.querySelector(".round-entry").classList.remove("hidden");
+      renderRoundSummary(state);
     });
 
     document.getElementById("history-detail-close").addEventListener("click", () => {
@@ -414,14 +688,19 @@
   function showGameOverModal(state) {
     const { session } = state;
     const totals = getTotals(session);
+    const seatAssignments = getSeatAssignments(state);
     const el = document.getElementById("game-over-scores");
     el.innerHTML = totals
       .map((score, i) => {
+        const seat = seatAssignments.find((item) => item.playerIndex === i)?.seat;
         let cls = "score-item";
-        if (score <= 0) cls += " danger";
+        if (score <= 0) cls += " danger busted";
         else cls += score > 0 ? " positive" : " negative";
         return `<div class="${cls}">
-          <span class="name">${escapeHtml(session.players[i])}</span>
+          <div class="score-top">
+            <span class="name">${escapeHtml(session.players[i])}</span>
+            <span class="seat-tag">${seat ? `${seat}位` : `P${i + 1}`}</span>
+          </div>
           <span class="value">${score}</span>
         </div>`;
       })
@@ -445,6 +724,11 @@
     if (round.detail.baseBreakdown) {
       html += round.detail.baseBreakdown.map((l) => `<div class="detail-row">${l}</div>`).join("");
     }
+    if (round.detail.kongBreakdown && round.detail.kongBreakdown.length) {
+      html += `<div class="detail-section">`;
+      html += round.detail.kongBreakdown.map((l) => `<div class="detail-row">${l}</div>`).join("");
+      html += "</div>";
+    }
     if (round.detail.chickenBreakdown && round.detail.chickenBreakdown.length) {
       html += `<div class="detail-section">`;
       html += round.detail.chickenBreakdown.map((l) => `<div class="detail-row">${l}</div>`).join("");
@@ -460,35 +744,96 @@
       });
     }
     html += `<div class="detail-section"><strong>本局得分</strong></div>`;
-    round.scores.forEach((s, i) => {
+    const tbl = round.tablePlayers && round.tablePlayers.length === 4 ? round.tablePlayers : [...Array(session.players.length)].map((_, i) => i);
+    tbl.forEach((i) => {
+      const s = round.scores[i] ?? 0;
       html += `<div class="detail-row">${escapeHtml(session.players[i])}: ${s >= 0 ? "+" : ""}${s}</div>`;
     });
     return html;
   }
 
   function formatRoundSummary(session, r, idx) {
+    if (!r) return `第${idx}局`;
     if (r.type === "win") {
       const winnerIndices = r.winners ?? (r.winner !== undefined ? [r.winner] : []);
       const winnerNames = winnerIndices.map((i) => session.players[i]).join("、");
       const desc = r.winType === "zimo" ? "自摸" : `点炮(${session.players[r.feeder]})`;
-      return `第${idx}局: ${winnerNames} ${desc}`;
+      return `第${idx}局 ${winnerNames} ${desc}`;
     }
-    if (r.type === "tianque") return `天缺: ${(r.tianque || []).map((i) => session.players[i]).join("、") || "无"}`;
     const tingNames = (r.ting || []).map((i) => session.players[i]).join("、");
-    return `第${idx}局: 流局 听牌: ${tingNames}`;
+    return `第${idx}局 流局${tingNames ? `，听牌：${tingNames}` : ""}`;
+  }
+
+  function deltaClass(delta) {
+    if (delta > 0) return "positive";
+    if (delta < 0) return "negative";
+    return "zero";
+  }
+
+  function deltaLabel(delta) {
+    if (delta > 0) return `上一局 +${delta}`;
+    if (delta < 0) return `上一局 ${delta}`;
+    return "上一局 0";
+  }
+
+  function buildHistoryScores(session, round) {
+    const table = round.tablePlayers && round.tablePlayers.length
+      ? round.tablePlayers
+      : [...Array(session.players.length)].map((_, i) => i);
+    return table
+      .filter((i) => (round.scores[i] || 0) !== 0)
+      .sort((a, b) => (round.scores[b] || 0) - (round.scores[a] || 0))
+      .slice(0, 4)
+      .map((i) => {
+        const score = round.scores[i] || 0;
+        return `<span class="mini-score ${deltaClass(score)}">${escapeHtml(session.players[i])} ${score > 0 ? "+" : ""}${score}</span>`;
+      })
+      .join("");
+  }
+
+  function collectKongs(listId) {
+    const list = document.getElementById(listId);
+    if (!list) return [];
+    const items = list.querySelectorAll(".kong-item");
+    return Array.from(items)
+      .map((item) => {
+        const kongerSel = item.querySelector("select[name=konger]");
+        const typeSel = item.querySelector("select[name=kongType]");
+        const feederSel = item.querySelector("select[name=kongFeeder]");
+        if (!kongerSel || !typeSel) return null;
+        const konger = parseInt(kongerSel.value, 10);
+        const type = typeSel.value;
+        if (type === "fanggang") {
+          const feeder = parseInt(feederSel?.value, 10);
+          if (feeder === undefined || feeder === null || isNaN(feeder)) return null;
+          return { konger, type, feeder };
+        }
+        return { konger, type };
+      })
+      .filter(Boolean);
   }
 
   function collectWinFormData(session) {
+    const state = { session };
     const form = document.getElementById("win-form");
     const n = session.players.length;
+    const tablePlayers = getTablePlayers(state);
+    if (n > 4 && tablePlayers.length !== 4) {
+      alert("请选择 4 人本局上场");
+      return null;
+    }
     const winners = Array.from(form.querySelectorAll('input[name="winner"]:checked')).map((c) =>
       parseInt(c.value, 10)
     );
     const winType = form.elements.winType.value;
     const feeder = winType === "dianpao" ? parseInt(form.elements.feeder?.value, 10) : null;
-    const ting = Array.from(form.querySelectorAll('input[name="ting"]:checked')).map((c) =>
-      parseInt(c.value, 10)
+    const chickenCountsRaw = [...Array(n)].map((_, i) =>
+      parseInt(form.elements["chicken_" + i]?.value, 10) || 0
     );
+    const ting = [...new Set([
+      ...winners,
+      ...tablePlayers.filter((i) => chickenCountsRaw[i] > 0),
+    ])];
 
     if (winners.length === 0) {
       alert("请选择胡牌者");
@@ -496,10 +841,6 @@
     }
     if (winType === "zimo" && winners.length > 1) {
       alert("自摸只能有一人胡牌");
-      return null;
-    }
-    if (winners.some((w) => !ting.includes(w))) {
-      alert("胡牌者必须在听牌者中");
       return null;
     }
     if (winType === "dianpao") {
@@ -511,7 +852,7 @@
         alert("点炮者不能是胡牌者");
         return null;
       }
-      if (winners.length === n) {
+      if (winners.length === 4) {
         alert("点炮时至少一人不能是胡牌者");
         return null;
       }
@@ -524,21 +865,22 @@
     const penaltyCounts = penaltyMode === "yes"
       ? [...Array(n)].map((_, i) => parseInt(form.elements["penalty_" + i]?.value, 10) || 0)
       : [...Array(n)].fill(0);
-    const flippedCard = form.elements.flippedCard.value;
-    const chickenCounts = [...Array(n)].map((_, i) =>
-      parseInt(form.elements["chicken_" + i]?.value, 10) || 0
-    );
+    const chickenCounts = chickenCountsRaw;
+    const multiplier = form.elements.chickenMode?.value === "yes" ? 2 : 1;
 
     const winnerFans = winners.map((i) => {
       const fanId = form.elements["fan_" + i]?.value;
       const f = FAN_TYPES.find((x) => x.id === fanId);
       return { winner: i, fanId: fanId || "putong", score: f ? f.score : 2 };
     });
-    const chickenCard = getChickenCard(flippedCard);
-    const multiplier = chickenCard && isGoldenChicken(chickenCard) ? 2 : 1;
+    const kongs = collectKongs("kong-list");
+    const totalsBefore = getTotals(session);
 
     const scores = calcWinRound({
       n,
+      session,
+      totalsBefore,
+      tablePlayers,
       winners,
       winType,
       feeder,
@@ -548,6 +890,7 @@
       ting,
       chickenCounts,
       multiplier,
+      kongs,
     });
 
     const baseBreakdown = [];
@@ -565,12 +908,21 @@
         .filter(Boolean);
       baseBreakdown.push(`查缺罚分：${parts.join("、")} 共-${penalty}`);
     }
+    const kongBreakdown = [];
+    kongs.forEach((k) => {
+      if (k.type === "zigang") {
+        kongBreakdown.push(`自杠：${session.players[k.konger]} 其余3人各付2分`);
+      } else {
+        kongBreakdown.push(`放杠：${session.players[k.konger]} 收 ${session.players[k.feeder]} 2分`);
+      }
+    });
 
     const chickenBreakdown = [];
-    if (chickenCard) {
-      chickenBreakdown.push(`翻出牌：${flippedCard} → 鸡牌：${chickenCard}${multiplier > 1 ? "（金鸡×2）" : ""}`);
+    const chickenDesc = multiplier > 1 ? "金鸡×2" : "1分/鸡";
+    if (tablePlayers.some((i) => ting.includes(i) && chickenCounts[i] > 0)) {
+      chickenBreakdown.push(`鸡分：${chickenDesc}`);
     }
-    for (let i = 0; i < n; i++) {
+    for (const i of tablePlayers) {
       if (ting.includes(i) && chickenCounts[i] > 0) {
         const per = chickenCounts[i] * multiplier;
         chickenBreakdown.push(`鸡分：${session.players[i]} ${chickenCounts[i]}张 ×${multiplier} = 每人付${per}分`);
@@ -580,6 +932,7 @@
     const playerBreakdown = buildWinPlayerBreakdown({
       session,
       n,
+      tablePlayers,
       winners,
       winType,
       feeder,
@@ -589,11 +942,13 @@
       ting,
       chickenCounts,
       multiplier,
+      kongs,
       scores,
     });
 
     return {
       type: "win",
+      tablePlayers,
       winners,
       winType,
       feeder,
@@ -601,53 +956,59 @@
       tianque,
       penalty,
       penaltyCounts,
-      flippedCard,
-      chickenCard,
+      chickenMode: multiplier > 1 ? "yes" : "no",
       ting,
       chickenCounts,
+      kongs,
       scores,
-      detail: { baseBreakdown, chickenBreakdown, playerBreakdown },
+      detail: { baseBreakdown, kongBreakdown, chickenBreakdown, playerBreakdown },
     };
   }
 
   function buildWinPlayerBreakdown(params) {
-    const { session, n, winners, winType, feeder, winnerFans, tianque, penaltyCounts, ting, chickenCounts, multiplier, scores } = params;
+    const { session, n, tablePlayers, winners, winType, feeder, winnerFans, tianque, penaltyCounts, ting, chickenCounts, multiplier, kongs, scores } = params;
+    const table = tablePlayers || [0, 1, 2, 3];
     const totalBasePerWinner = winners.map((w) => {
       const fan = winnerFans.find((x) => x.winner === w);
-      const fanScore = fan ? fan.score : 2;
-      const penalty = penaltyCounts[w] || 0;
-      return fanScore - penalty;
+      return fan ? fan.score : 2;
     });
     const payers = winType === "zimo"
-      ? [...Array(n)].map((_, i) => i).filter((i) => i !== winners[0])
+      ? table.filter((i) => i !== winners[0])
       : [feeder];
     const payPerPerson = winType === "zimo" ? totalBasePerWinner[0] : totalBasePerWinner.reduce((s, t) => s + t, 0);
+    const winnerPenaltyReceive = winType === "zimo"
+      ? payers.reduce((s, p) => s + (penaltyCounts[p] || 0), 0)
+      : (penaltyCounts[feeder] || 0);
 
-    return session.players.map((name, i) => {
+    return table.map((i) => {
+      const name = session.players[i];
       const items = [];
       const winnerIdx = winners.indexOf(i);
       if (winnerIdx >= 0) {
         const winnerReceive = winType === "zimo"
-          ? totalBasePerWinner[winnerIdx] * (n - 1)
+          ? totalBasePerWinner[winnerIdx] * payers.length
           : totalBasePerWinner[winnerIdx];
         items.push(`收番型: +${winnerReceive}`);
+        if (winnerIdx === 0 && winnerPenaltyReceive > 0) {
+          items.push(`收查缺: +${winnerPenaltyReceive}`);
+        }
       } else if (payers.includes(i)) {
         items.push(`付番型: -${payPerPerson}`);
+        if (penaltyCounts && penaltyCounts[i] > 0) {
+          items.push(`付查缺: -${penaltyCounts[i]}`);
+        }
       }
       if (tianque && tianque.includes(i)) {
-        const notTianqueCount = n - tianque.length;
+        const notTianqueCount = table.filter((j) => !tianque.includes(j)).length;
         items.push(`收天缺: +${2 * notTianqueCount}`);
-      } else if (tianque && tianque.length > 0) {
+      } else if (tianque && tianque.length > 0 && table.includes(i)) {
         items.push(`付天缺: -${2 * tianque.length}`);
       }
-      if (penaltyCounts && penaltyCounts[i] > 0) {
-        items.push(`查缺罚分: -${penaltyCounts[i]}`);
-      }
       const chickenReceive = ting.includes(i) && chickenCounts[i] > 0
-        ? chickenCounts[i] * multiplier * (n - 1)
+        ? chickenCounts[i] * multiplier * (table.length - 1)
         : 0;
       let chickenPay = 0;
-      for (let j = 0; j < n; j++) {
+      for (const j of table) {
         if (j !== i && ting.includes(j) && chickenCounts[j] > 0) {
           chickenPay += chickenCounts[j] * multiplier;
         }
@@ -656,15 +1017,36 @@
         if (chickenReceive > 0) items.push(`收鸡分: +${chickenReceive}`);
         if (chickenPay > 0) items.push(`付鸡分: -${chickenPay}`);
       }
+      if (kongs && table.includes(i)) {
+        for (const k of kongs) {
+          if (k.type === "zigang") {
+            if (k.konger === i) items.push(`收自杠: +6`);
+            else items.push(`付自杠: -2`);
+          } else {
+            if (k.konger === i) items.push(`收放杠: +2`);
+            else if (k.feeder === i) items.push(`付放杠: -2`);
+          }
+        }
+      }
       const score = scores ? scores[i] : 0;
       items.push(`小计: ${score >= 0 ? "+" : ""}${score}`);
       return { name, items };
     });
   }
 
+  function payCap(bal, fromIdx, toIdx, amount) {
+    const actual = Math.min(Math.max(0, amount), Math.max(0, bal[fromIdx]));
+    bal[fromIdx] -= actual;
+    bal[toIdx] += actual;
+    return actual;
+  }
+
   function calcWinRound(params) {
     const {
       n,
+      session,
+      totalsBefore = [],
+      tablePlayers = [0, 1, 2, 3],
       winners,
       winType,
       feeder,
@@ -674,75 +1056,110 @@
       ting,
       chickenCounts,
       multiplier,
+      kongs = [],
     } = params;
 
+    const bal = totalsBefore.length === n ? [...totalsBefore] : [...Array(n)].fill(session?.initialScore ?? INITIAL_SCORE);
     const totalBasePerWinner = winners.map((w) => {
       const fan = winnerFans.find((x) => x.winner === w);
-      const fanScore = fan ? fan.score : 2;
-      const penalty = penaltyCounts[w] || 0;
-      return fanScore - penalty;
+      return fan ? fan.score : 2;
     });
 
-    const scores = [...Array(n)].fill(0);
+    for (const i of tablePlayers) {
+      if (!tianque.includes(i)) continue;
+      const notTianque = tablePlayers.filter((j) => !tianque.includes(j));
+      notTianque.forEach((j) => payCap(bal, j, i, 2));
+    }
+
+    for (const k of kongs) {
+      if (k.type === "zigang") {
+        const others = tablePlayers.filter((x) => x !== k.konger);
+        others.forEach((j) => payCap(bal, j, k.konger, 2));
+      } else {
+        payCap(bal, k.feeder, k.konger, 2);
+      }
+    }
 
     if (winType === "zimo") {
       const winner = winners[0];
       const totalBase = totalBasePerWinner[0];
-      const payers = [...Array(n)].map((_, i) => i).filter((i) => i !== winner);
-      payers.forEach((i) => {
-        scores[i] -= totalBase;
-      });
-      scores[winner] += totalBase * payers.length;
+      const payers = tablePlayers.filter((i) => i !== winner);
+      payers.forEach((i) => payCap(bal, i, winner, totalBase));
     } else {
-      const payTotal = totalBasePerWinner.reduce((s, t) => s + t, 0);
-      scores[feeder] -= payTotal;
-      winners.forEach((w, idx) => (scores[w] += totalBasePerWinner[idx]));
-    }
-
-    for (let i = 0; i < n; i++) {
-      if (!tianque.includes(i)) continue;
-      const notTianque = [...Array(n)].map((_, j) => j).filter((j) => !tianque.includes(j));
-      notTianque.forEach((j) => {
-        scores[j] -= 2;
-        scores[i] += 2;
-      });
-    }
-
-    for (let i = 0; i < n; i++) {
-      if (!ting.includes(i) || chickenCounts[i] <= 0) continue;
-      const chickenPerPerson = chickenCounts[i] * multiplier;
-      for (let j = 0; j < n; j++) {
-        if (j !== i) {
-          scores[j] -= chickenPerPerson;
-          scores[i] += chickenPerPerson;
-        }
+      payCap(bal, feeder, winners[0], totalBasePerWinner[0]);
+      for (let idx = 1; idx < winners.length; idx++) {
+        payCap(bal, feeder, winners[idx], totalBasePerWinner[idx]);
       }
     }
 
-    return scores;
+    if (winType === "zimo") {
+      const winner = winners[0];
+      const payers = tablePlayers.filter((i) => i !== winner);
+      payers.forEach((i) => payCap(bal, i, winner, penaltyCounts[i] || 0));
+    } else {
+      payCap(bal, feeder, winners[0], penaltyCounts[feeder] || 0);
+    }
+
+    for (const i of tablePlayers) {
+      if (!ting.includes(i) || chickenCounts[i] <= 0) continue;
+      const chickenPerPerson = chickenCounts[i] * multiplier;
+      for (const j of tablePlayers) {
+        if (j !== i) payCap(bal, j, i, chickenPerPerson);
+      }
+    }
+
+    const base = session?.initialScore ?? INITIAL_SCORE;
+    return bal.map((b, i) => b - (totalsBefore[i] ?? base));
   }
 
   function collectLiujuFormData(session) {
+    const state = { session };
     const form = document.getElementById("liuju-form");
     const n = session.players.length;
+    const tablePlayers = getTablePlayers(state);
+    if (n > 4 && tablePlayers.length !== 4) {
+      alert("请选择 4 人本局上场");
+      return null;
+    }
     const ting = Array.from(form.querySelectorAll('input[name="ting"]:checked')).map((c) =>
       parseInt(c.value, 10)
     );
-    const scores = calcLiujuRound(n, ting);
+    const kongs = collectKongs("liuju-kong-list");
+    const totalsBefore = getTotals(session);
+    const scores = calcLiujuRound(n, session, totalsBefore, ting, tablePlayers, kongs);
 
-    const notTing = [...Array(n)].map((_, i) => i).filter((i) => !ting.includes(i));
+    const notTing = tablePlayers.filter((i) => !ting.includes(i));
     const baseBreakdown = [
       `未听牌：${notTing.map((i) => session.players[i]).join("、")}`,
       `听牌：${ting.map((i) => session.players[i]).join("、")}`,
       `规则：未听牌者向每位听牌者付 2 分`,
     ];
+    const kongBreakdown = kongs.map((k) => {
+      if (k.type === "zigang") return `自杠：${session.players[k.konger]} 其余3人各付2分`;
+      return `放杠：${session.players[k.konger]} 收 ${session.players[k.feeder]} 2分`;
+    });
 
     const playerBreakdown = session.players.map((name, i) => {
       const items = [];
+      if (!tablePlayers.includes(i)) {
+        items.push(`小计：0（本局未上场）`);
+        return { name, items };
+      }
       if (ting.includes(i)) {
         items.push(`流局收分：未听牌${notTing.length}人 × 2分 = +${2 * notTing.length}`);
       } else {
         items.push(`流局付分：听牌${ting.length}人 × 2分 = -${2 * ting.length}`);
+      }
+      if (kongs.length && tablePlayers.includes(i)) {
+        for (const k of kongs) {
+          if (k.type === "zigang") {
+            if (k.konger === i) items.push(`收自杠: +6`);
+            else items.push(`付自杠: -2`);
+          } else {
+            if (k.konger === i) items.push(`收放杠: +2`);
+            else if (k.feeder === i) items.push(`付放杠: -2`);
+          }
+        }
       }
       items.push(`小计：${scores[i] >= 0 ? "+" : ""}${scores[i]}`);
       return { name, items };
@@ -750,39 +1167,59 @@
 
     return {
       type: "liuju",
+      tablePlayers,
       ting,
+      kongs,
       scores,
-      detail: { baseBreakdown, playerBreakdown },
+      detail: { baseBreakdown, kongBreakdown, playerBreakdown },
     };
   }
 
-  function calcLiujuRound(n, ting) {
-    const scores = [...Array(n)].fill(0);
-    const notTing = [...Array(n)].map((_, i) => i).filter((i) => !ting.includes(i));
-    for (const i of notTing) {
-      for (const j of ting) {
-        scores[i] -= 2;
-        scores[j] += 2;
+  function calcLiujuRound(n, session, totalsBefore, ting, tablePlayers = [0, 1, 2, 3], kongs = []) {
+    const base = session?.initialScore ?? INITIAL_SCORE;
+    const bal = totalsBefore.length === n ? [...totalsBefore] : [...Array(n)].fill(base);
+
+    for (const k of kongs) {
+      if (k.type === "zigang") {
+        const others = tablePlayers.filter((x) => x !== k.konger);
+        others.forEach((j) => payCap(bal, j, k.konger, 2));
+      } else {
+        payCap(bal, k.feeder, k.konger, 2);
       }
     }
-    return scores;
+
+    const notTing = tablePlayers.filter((i) => !ting.includes(i));
+    for (const i of notTing) {
+      for (const j of ting) {
+        payCap(bal, i, j, 2);
+      }
+    }
+
+    return bal.map((b, i) => b - (totalsBefore[i] ?? base));
   }
 
   function showRoundResult(state) {
     const round = state.lastRound;
     const { session } = state;
-    const n = session.players.length;
+    const tbl = round.tablePlayers && round.tablePlayers.length === 4
+      ? round.tablePlayers
+      : [...Array(session.players.length)].map((_, i) => i);
+    const seatAssignments = getSeatAssignments(state);
 
     const el = document.getElementById("round-scores");
-    el.innerHTML = [...Array(n)]
-      .map((_, i) => {
-        const s = round.scores[i];
+    el.innerHTML = tbl
+      .map((i) => {
+        const s = round.scores[i] ?? 0;
+        const seat = seatAssignments.find((item) => item.playerIndex === i)?.seat;
         let cls = "score-item";
         if (s > 0) cls += " positive";
         else if (s < 0) cls += " negative";
         else cls += " zero";
         return `<div class="${cls}">
-          <span class="name">${escapeHtml(session.players[i])}</span>
+          <div class="score-top">
+            <span class="name">${escapeHtml(session.players[i])}</span>
+            <span class="seat-tag">${seat ? `${seat}位` : "本局"}</span>
+          </div>
           <span class="value">${s >= 0 ? "+" : ""}${s}</span>
         </div>`;
       })
@@ -800,6 +1237,8 @@
   function renderHistory(state) {
     const { session } = state;
     const list = document.getElementById("history-list");
+    const undoBtn = document.getElementById("undo-round-btn");
+    if (undoBtn) undoBtn.disabled = session.rounds.length === 0;
     if (session.rounds.length === 0) {
       list.innerHTML = "<p style='color:var(--text-muted);font-size:0.9rem'>暂无记录</p>";
       return;
@@ -807,8 +1246,16 @@
     list.innerHTML = session.rounds
       .map((r, idx) => {
         const summary = formatRoundSummary(session, r, idx + 1);
+        const typeTag = r.type === "win" ? (r.winType === "zimo" ? "胡牌" : "点炮") : "流局";
+        const miniScores = buildHistoryScores(session, r) || `<span class="mini-score">本局分数全为 0</span>`;
         return `<div class="history-item" data-idx="${idx}">
-          <span class="summary">${summary}</span>
+          <span class="summary">
+            <span class="history-top">
+              <span class="history-title">${summary}</span>
+              <span class="history-tag">${typeTag}</span>
+            </span>
+            <span class="history-scores">${miniScores}</span>
+          </span>
           <span class="expand">查看详情</span>
         </div>`;
       })

@@ -12,9 +12,14 @@
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="logo">
-        <img src="logo.png" alt="一条" class="logo-icon">
-        <h1>礼泉翻鸡计分器</h1>
+      <div class="header-bar">
+        <div class="logo">
+          <img src="logo.png?v=2" alt="一条" class="logo-icon">
+          <div class="logo-copy">
+            <h1>礼泉翻鸡计分器</h1>
+            <p class="app-tagline">牌桌边就能快速记一局，算得清，也看得清</p>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -23,15 +28,20 @@
         <h2>新建对局</h2>
         <form id="new-session-form">
           <div class="form-row">
+            <label>人数</label>
+            <select name="playerCount" id="player-count">
+              <option value="4">4 人</option>
+              <option value="5">5 人</option>
+              <option value="6">6 人</option>
+              <option value="7">7 人</option>
+              <option value="8">8 人</option>
+            </select>
+          </div>
+          <div class="form-row">
             <label>初始积分</label>
             <input type="number" name="initialScore" class="setup-input" value="20" min="1" max="999">
           </div>
-          <div class="player-inputs" id="player-inputs">
-            <label>玩家 1 <input type="text" name="p0" class="player-name-input" placeholder="昵称" required></label>
-            <label>玩家 2 <input type="text" name="p1" class="player-name-input" placeholder="昵称" required></label>
-            <label>玩家 3 <input type="text" name="p2" class="player-name-input" placeholder="昵称" required></label>
-            <label>玩家 4 <input type="text" name="p3" class="player-name-input" placeholder="昵称" required></label>
-          </div>
+          <div class="player-inputs" id="player-inputs"></div>
           <button type="submit" class="btn-primary">开始</button>
         </form>
       </section>
@@ -39,7 +49,10 @@
       <section id="game-panel" class="hidden">
         <div class="scoreboard-panel">
           <div class="scoreboard-header">
-            <h2>当前积分</h2>
+            <div>
+              <h2>当前积分</h2>
+              <p id="scoreboard-subtitle" class="scoreboard-subtitle">新大局已开始</p>
+            </div>
             <button type="button" id="new-session-btn" class="btn-ghost">新对局</button>
           </div>
           <div id="total-scores" class="score-grid"></div>
@@ -47,6 +60,11 @@
 
         <div class="round-entry panel">
           <h2>本局录入</h2>
+          <div id="round-summary" class="round-summary"></div>
+          <div id="table-players-row" class="form-group table-players-row hidden">
+            <label>本局上场座位（东南西北）</label>
+            <div id="table-player-seats" class="seat-grid"></div>
+          </div>
           <div class="round-type-tabs">
             <button type="button" data-type="win" class="tab active">胡牌</button>
             <button type="button" data-type="liuju" class="tab">流局</button>
@@ -54,63 +72,90 @@
 
           <form id="win-form" class="round-form">
             <input type="hidden" name="type" value="win">
-            <div class="form-group">
-              <label>天缺（无天缺不勾选）</label>
-              <div id="tianque-checkboxes" class="checkbox-group"></div>
-            </div>
-            <div class="form-group">
-              <label>自摸 / 点炮</label>
-              <div class="win-type-tabs">
-                <button type="button" class="tab" data-wintype="zimo">自摸</button>
-                <button type="button" class="tab" data-wintype="dianpao">点炮</button>
+            <div class="form-section">
+              <div class="section-title">胜负信息</div>
+              <div class="form-group">
+                <label>自摸 / 点炮</label>
+                <div class="win-type-tabs">
+                  <button type="button" class="tab active" data-wintype="zimo">自摸</button>
+                  <button type="button" class="tab" data-wintype="dianpao">点炮</button>
+                </div>
+                <input type="hidden" name="winType" value="zimo">
               </div>
-              <input type="hidden" name="winType" value="zimo">
-            </div>
-            <div class="form-group">
-              <label>胡牌者（点炮可多选）</label>
-              <div id="winner-checkboxes" class="checkbox-group"></div>
-            </div>
-            <div class="form-row dianpao-only hidden">
-              <label>点炮者</label>
-              <select name="feeder"></select>
-            </div>
-            <div class="form-group" id="fan-group">
-              <label>番型</label>
-              <div id="fan-select-container"></div>
-            </div>
-            <div class="form-group penalty-section">
-              <label>是否查缺</label>
-              <div class="penalty-tabs">
-                <button type="button" class="tab" data-penalty="yes" id="penalty-yes">是</button>
-                <button type="button" class="tab active" data-penalty="no" id="penalty-no">否</button>
+              <div class="form-group">
+                <label>胡牌者（点炮可多选）</label>
+                <div id="winner-checkboxes" class="checkbox-group player-chip-group"></div>
               </div>
-              <input type="hidden" name="penaltyMode" value="no">
+              <div class="form-row dianpao-only hidden">
+                <label>点炮者</label>
+                <select name="feeder"></select>
+              </div>
+              <div class="form-group" id="fan-group">
+                <label>番型</label>
+                <div id="fan-select-container"></div>
+              </div>
             </div>
-            <div class="form-group penalty-row hidden">
-              <label class="penalty-sublabel">每人缺门张数（非胡牌者）</label>
-              <div id="penalty-inputs" class="chicken-grid"></div>
-            </div>
-            <div class="form-row">
-              <label>翻出牌（+1为鸡牌）</label>
-              <select name="flippedCard"></select>
-            </div>
-            <div class="form-group">
-              <label>听牌者（含胡牌者）</label>
-              <div id="ting-checkboxes" class="checkbox-group"></div>
-            </div>
-            <div class="form-group chicken-group hidden">
-              <label>每人鸡牌数（仅听牌者填）</label>
-              <div id="chicken-inputs" class="chicken-grid"></div>
-            </div>
+
+            <details class="advanced-section" open>
+              <summary>进阶项</summary>
+              <div class="advanced-content">
+                <div class="form-group">
+                  <label>天缺（无天缺不勾选）</label>
+                  <div id="tianque-checkboxes" class="checkbox-group player-chip-group"></div>
+                </div>
+                <div class="form-group penalty-section">
+                  <label>是否查缺</label>
+                  <div class="penalty-tabs" id="penalty-mode-tabs">
+                    <button type="button" class="tab" data-penalty="yes" id="penalty-yes">是</button>
+                    <button type="button" class="tab active" data-penalty="no" id="penalty-no">否</button>
+                  </div>
+                  <input type="hidden" name="penaltyMode" value="no">
+                </div>
+                <div class="form-group penalty-row hidden">
+                  <label class="penalty-sublabel">每人缺门张数（非胡牌者）</label>
+                  <div id="penalty-inputs" class="chicken-grid"></div>
+                </div>
+                <div class="form-group">
+                  <label>是否金鸡</label>
+                  <div class="chicken-mode-tabs">
+                    <button type="button" class="tab active" data-chicken="no">否（1分/鸡）</button>
+                    <button type="button" class="tab" data-chicken="yes">是（金鸡×2）</button>
+                  </div>
+                  <input type="hidden" name="chickenMode" value="no">
+                </div>
+                <div class="form-group">
+                  <label>每人鸡牌数</label>
+                  <div id="chicken-inputs" class="chicken-grid"></div>
+                </div>
+                <div class="form-group kong-section">
+                  <label>杠牌（可多选）</label>
+                  <div id="kong-list" class="kong-list"></div>
+                  <button type="button" id="add-kong-btn" class="btn-ghost btn-sm">+ 添加杠牌</button>
+                </div>
+              </div>
+            </details>
             <button type="submit" class="btn-primary">结算</button>
           </form>
 
           <form id="liuju-form" class="round-form hidden">
             <input type="hidden" name="type" value="liuju">
-            <div class="form-group">
-              <label>听牌者</label>
-              <div id="liuju-ting-checkboxes" class="checkbox-group"></div>
+            <div class="form-section">
+              <div class="section-title">流局信息</div>
+              <div class="form-group">
+                <label>听牌者</label>
+                <div id="liuju-ting-checkboxes" class="checkbox-group player-chip-group"></div>
+              </div>
             </div>
+            <details class="advanced-section">
+              <summary>杠牌补充</summary>
+              <div class="advanced-content">
+                <div class="form-group kong-section">
+                  <label>杠牌（可多选）</label>
+                  <div id="liuju-kong-list" class="kong-list"></div>
+                  <button type="button" id="add-liuju-kong-btn" class="btn-ghost btn-sm">+ 添加杠牌</button>
+                </div>
+              </div>
+            </details>
             <button type="submit" class="btn-primary">结算</button>
           </form>
         </div>
@@ -123,7 +168,13 @@
         </div>
 
         <div class="history-panel panel">
-          <h2>历史记录</h2>
+          <div class="history-header">
+            <div>
+              <h2>历史记录</h2>
+              <p class="history-subtitle">最近结算会显示核心分数变化</p>
+            </div>
+            <button type="button" id="undo-round-btn" class="btn-ghost btn-danger">撤销上一局</button>
+          </div>
           <div id="history-list" class="history-list"></div>
         </div>
       </section>
@@ -132,7 +183,7 @@
     <div id="game-over-overlay" class="overlay hidden">
       <div class="modal game-over-modal">
         <h2>大局结算</h2>
-        <p class="game-over-desc">有人积分 ≤ 0，本大局结束</p>
+        <p class="game-over-desc">有人积分小于等于 0，本大局结束</p>
         <div id="game-over-scores" class="score-grid"></div>
         <div id="game-over-detail" class="round-detail"></div>
         <button type="button" id="game-over-confirm" class="btn-primary">开始新大局</button>
