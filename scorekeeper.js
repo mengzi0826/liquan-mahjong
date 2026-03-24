@@ -97,7 +97,7 @@
     document.getElementById("session-setup").classList.add("hidden");
     document.getElementById("game-panel").classList.remove("hidden");
 
-    const state = { session };
+    const state = { session, scoreboardExpanded: false };
     renderTablePlayersRow(state);
     renderScoreboard(state);
     renderWinForm(state);
@@ -110,9 +110,20 @@
     bindChickenToggle(state);
     bindKongButtons(state);
     bindLiveSummary(state);
+    bindScoreboardToggle(state);
     bindUndoRound(state);
     renderHistory(state);
     renderRoundSummary(state);
+  }
+
+  function bindScoreboardToggle(state) {
+    const btn = document.getElementById("scoreboard-toggle-btn");
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      state.scoreboardExpanded = !state.scoreboardExpanded;
+      renderScoreboard(state);
+    });
   }
 
   function getTablePlayers(state) {
@@ -210,6 +221,10 @@
         ? `已记录 ${session.rounds.length} 局，最近一局：${formatRoundSummary(session, latestRound, session.rounds.length)}`
         : "新大局已开始";
     }
+    const details = document.getElementById("scoreboard-details");
+    const toggleBtn = document.getElementById("scoreboard-toggle-btn");
+    if (details) details.classList.toggle("hidden", !state.scoreboardExpanded);
+    if (toggleBtn) toggleBtn.textContent = state.scoreboardExpanded ? "收起四家积分" : "展开四家积分";
     const el = document.getElementById("total-scores");
     el.innerHTML = totals
       .map((score, i) => {
@@ -304,21 +319,28 @@
   function renderRoundSummary(state) {
     const el = document.getElementById("round-summary");
     if (!el || !state?.session) return;
-    const tablePlayers = getTablePlayers(state);
-    const tableNames = tablePlayers.map((i) => state.session.players[i]);
-    const seatNames = getSeatAssignments(state).map(({ seat, playerIndex }) => `${seat}位 ${state.session.players[playerIndex]}`);
+    const { players } = state.session;
     const activeType = document.querySelector(".round-type-tabs .tab.active")?.dataset.type || "win";
     let main = "";
-    const chips = [`上场：${tableNames.join("、")}`, ...seatNames];
+    const items = [];
+    const pairItems = (entries) => {
+      const pairs = [];
+      for (let i = 0; i < entries.length; i += 2) {
+        pairs.push(entries.slice(i, i + 2));
+      }
+      return pairs;
+    };
 
     if (activeType === "liuju") {
       const ting = Array.from(document.querySelectorAll('#liuju-ting-checkboxes input[name="ting"]:checked')).map((c) =>
         state.session.players[parseInt(c.value, 10)]
       );
-      const liujuKongs = document.querySelectorAll("#liuju-kong-list .kong-item").length;
+      const liujuKongText = buildKongSummaryText("liuju-kong-list", players);
       main = ting.length ? `流局，${ting.join("、")} 听牌` : "流局，待选择听牌者";
-      if (liujuKongs) chips.push(`杠牌 ${liujuKongs} 条`);
+      items.push({ label: "听牌", value: ting.length ? ting.join("、") : "待选择" });
+      items.push({ label: "杠牌", value: liujuKongText });
     } else {
+      const tablePlayers = getTablePlayers(state);
       const winType = document.querySelector('#win-form input[name="winType"]')?.value || "zimo";
       const winners = Array.from(document.querySelectorAll('#winner-checkboxes input[name="winner"]:checked')).map((c) =>
         parseInt(c.value, 10)
@@ -328,31 +350,88 @@
       const feederName = Number.isNaN(feederIdx) ? "" : state.session.players[feederIdx];
       const chickenMode = document.querySelector('#win-form input[name="chickenMode"]')?.value === "yes";
       const penaltyMode = document.querySelector('#win-form input[name="penaltyMode"]')?.value === "yes";
-      const kongCount = document.querySelectorAll("#kong-list .kong-item").length;
+      const kongText = buildKongSummaryText("kong-list", players);
       const tianque = Array.from(document.querySelectorAll('#tianque-checkboxes input[name="tianque"]:checked')).map((c) =>
         state.session.players[parseInt(c.value, 10)]
       );
+      const penaltyEntries = penaltyMode
+        ? tablePlayers
+            .map((i) => {
+              const input = document.querySelector(`#penalty-inputs input[name="penalty_${i}"]`);
+              const count = parseInt(input?.value, 10) || 0;
+              return count > 0 ? `${state.session.players[i]}${count}` : null;
+            })
+            .filter(Boolean)
+        : [];
+      const chickenEntries = tablePlayers
+        .map((i) => {
+          const input = document.querySelector(`#chicken-inputs input[name="chicken_${i}"]`);
+          const count = parseInt(input?.value, 10) || 0;
+          return count > 0 ? `${state.session.players[i]} ${count}` : null;
+        })
+        .filter(Boolean);
+      const fanEntries = winners
+        .map((i) => {
+          const fanId = document.querySelector(`#fan-select-container select[name="fan_${i}"]`)?.value;
+          const fan = FAN_TYPES.find((entry) => entry.id === fanId);
+          return fan ? fan.name : null;
+        })
+        .filter(Boolean);
       if (!winnerNames.length) {
         main = winType === "dianpao" ? "点炮局，待选择胡牌者和点炮者" : "自摸局，待选择胡牌者";
-      } else if (winType === "dianpao") {
-        main = `${winnerNames.join("、")} 点炮胡牌${feederName ? `，点炮者 ${feederName}` : ""}`;
       } else {
-        main = `${winnerNames.join("、")} 自摸`;
+        const segments = [
+          `${winType === "dianpao" ? "点炮胡牌" : "自摸胡牌"}`,
+          `胡牌者：${winnerNames.join("、")}`,
+        ];
+        if (winType === "dianpao") segments.push(`点炮者：${feederName || "待选择"}`);
+        if (fanEntries.length) segments.push(`番型：${fanEntries.join("、")}`);
+        main = segments.join("，");
       }
-      chips.push(`方式：${winType === "dianpao" ? "点炮" : "自摸"}`);
-      if (tianque.length) chips.push(`天缺：${tianque.join("、")}`);
-      if (penaltyMode) chips.push("查缺已开启");
-      if (chickenMode) chips.push("金鸡 x2");
-      if (kongCount) chips.push(`杠牌 ${kongCount} 条`);
+      items.push({ label: "天缺", value: tianque.length ? tianque.join("、") : "无" });
+      items.push({ label: "查缺", value: penaltyMode ? "是" : "否" });
+      items.push({ label: "金鸡", value: chickenMode ? "是" : "否" });
+      items.push({ label: "缺门", value: penaltyEntries.length ? penaltyEntries.join("、") : "无" });
+      items.push({ label: "鸡牌", value: chickenEntries.length ? chickenEntries.join("、") : "无" });
+      items.push({ label: "杠牌", value: kongText });
     }
 
     el.innerHTML = `
       <p class="round-summary-title">当前录入摘要</p>
       <p class="round-summary-main">${escapeHtml(main)}</p>
-      <div class="round-summary-meta">
-        ${chips.map((chip) => `<span class="round-summary-chip">${escapeHtml(chip)}</span>`).join("")}
+      <div class="round-summary-list">
+        ${pairItems(items).map((group) => `
+          <div class="round-summary-row">
+            ${group.map((row) => `
+              <div class="summary-cell">
+                <span class="summary-label">${escapeHtml(row.label)}</span>
+                <span class="summary-value">${escapeHtml(row.value)}</span>
+              </div>
+            `).join("")}
+          </div>
+        `).join("")}
       </div>
     `;
+  }
+
+  function buildKongSummaryText(listId, players) {
+    const list = document.getElementById(listId);
+    if (!list) return "无";
+    const rows = Array.from(list.querySelectorAll(".kong-item"));
+    if (!rows.length) return "无";
+    return rows
+      .map((row) => {
+        const konger = parseInt(row.querySelector('select[name="konger"]')?.value, 10);
+        const type = row.querySelector('input[name="kongType"]')?.value || "zigang";
+        const feeder = parseInt(row.querySelector('select[name="kongFeeder"]')?.value, 10);
+        const kongerName = Number.isNaN(konger) ? "未选玩家" : players[konger];
+        if (type === "fanggang") {
+          const feederName = Number.isNaN(feeder) ? "待补放杠者" : players[feeder];
+          return `${kongerName} 放杠（${feederName}）`;
+        }
+        return `${kongerName} 自杠`;
+      })
+      .join("、");
   }
 
   function appendKongItem(listEl, tablePlayers, players) {
@@ -600,33 +679,11 @@
   }
 
   function bindRoundForms(state) {
-    document.getElementById("win-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const round = collectWinFormData(state.session);
-      if (!round) return;
-      state.lastRound = round;
-      state.session.rounds.push(round);
-      saveSession(state.session);
-      showRoundResult(state);
-      renderHistory(state);
-      checkGameOver(state);
-    });
-
-    document.getElementById("liuju-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const round = collectLiujuFormData(state.session);
-      if (!round) return;
-      state.lastRound = round;
-      state.session.rounds.push(round);
-      saveSession(state.session);
-      showRoundResult(state);
-      renderHistory(state);
-      checkGameOver(state);
-    });
-
-    document.getElementById("next-round").addEventListener("click", () => {
+    const proceedNextRound = () => {
       document.querySelector(".round-result").classList.add("hidden");
       document.querySelector(".round-entry").classList.remove("hidden");
+      document.getElementById("history-detail-overlay").classList.add("hidden");
+      document.getElementById("history-detail-next")?.classList.add("hidden");
       document.getElementById("win-form").reset();
       document.getElementById("liuju-form").reset();
       document.getElementById("kong-list").innerHTML = "";
@@ -651,7 +708,34 @@
       renderLiujuForm(state);
       renderScoreboard(state);
       renderRoundSummary(state);
+    };
+
+    document.getElementById("win-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const round = collectWinFormData(state.session);
+      if (!round) return;
+      state.lastRound = round;
+      state.session.rounds.push(round);
+      saveSession(state.session);
+      showRoundResult(state);
+      renderHistory(state);
+      checkGameOver(state);
     });
+
+    document.getElementById("liuju-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const round = collectLiujuFormData(state.session);
+      if (!round) return;
+      state.lastRound = round;
+      state.session.rounds.push(round);
+      saveSession(state.session);
+      showRoundResult(state);
+      renderHistory(state);
+      checkGameOver(state);
+    });
+
+    document.getElementById("next-round").addEventListener("click", proceedNextRound);
+    document.getElementById("history-detail-next")?.addEventListener("click", proceedNextRound);
 
     document.getElementById("game-over-confirm").addEventListener("click", () => {
       if (!confirm("确定开始新大局？")) return;
@@ -668,11 +752,13 @@
 
     document.getElementById("history-detail-close").addEventListener("click", () => {
       document.getElementById("history-detail-overlay").classList.add("hidden");
+      document.getElementById("history-detail-next")?.classList.add("hidden");
     });
 
     document.getElementById("history-detail-overlay").addEventListener("click", (e) => {
       if (e.target.id === "history-detail-overlay") {
         document.getElementById("history-detail-overlay").classList.add("hidden");
+        document.getElementById("history-detail-next")?.classList.add("hidden");
       }
     });
 
@@ -1230,7 +1316,11 @@
     detailEl.classList.toggle("hidden", !detailEl.innerHTML);
 
     document.querySelector(".round-entry").classList.add("hidden");
-    document.querySelector(".round-result").classList.remove("hidden");
+    document.querySelector(".round-result").classList.add("hidden");
+    document.getElementById("history-detail-title").textContent = "本局结算";
+    document.getElementById("history-detail-content").innerHTML = detailEl.innerHTML;
+    document.getElementById("history-detail-next")?.classList.remove("hidden");
+    document.getElementById("history-detail-overlay").classList.remove("hidden");
     renderScoreboard(state);
   }
 
@@ -1270,6 +1360,7 @@
         document.getElementById("history-detail-title").textContent = title;
         const content = document.getElementById("history-detail-content");
         content.innerHTML = buildDetailHtml(r, session) || `<div class="detail-row">${formatRoundSummary(session, r, idx + 1)}</div>`;
+        document.getElementById("history-detail-next")?.classList.add("hidden");
         document.getElementById("history-detail-overlay").classList.remove("hidden");
       });
     });

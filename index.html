@@ -47,6 +47,10 @@
       </section>
 
       <section id="game-panel" class="hidden">
+        <div class="summary-float">
+          <div id="round-summary" class="round-summary floating-summary"></div>
+        </div>
+
         <div class="scoreboard-panel">
           <div class="scoreboard-header">
             <div>
@@ -55,12 +59,16 @@
             </div>
             <button type="button" id="new-session-btn" class="btn-ghost">新对局</button>
           </div>
-          <div id="total-scores" class="score-grid"></div>
+          <div class="scoreboard-summary-row">
+            <button type="button" id="scoreboard-toggle-btn" class="btn-ghost btn-sm">展开四家积分</button>
+          </div>
+          <div id="scoreboard-details" class="hidden">
+            <div id="total-scores" class="score-grid"></div>
+          </div>
         </div>
 
         <div class="round-entry panel">
           <h2>本局录入</h2>
-          <div id="round-summary" class="round-summary"></div>
           <div id="table-players-row" class="form-group table-players-row hidden">
             <label>本局上场座位（东南西北）</label>
             <div id="table-player-seats" class="seat-grid"></div>
@@ -197,6 +205,7 @@
           <button type="button" id="history-detail-close" class="btn-close">×</button>
         </div>
         <div id="history-detail-content" class="round-detail"></div>
+        <button type="button" id="history-detail-next" class="btn-primary hidden">下一局</button>
       </div>
     </div>
   </div>
