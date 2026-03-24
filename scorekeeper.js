@@ -4,6 +4,11 @@
   const STORAGE_KEY = "liquan_mahjong_session";
   const INITIAL_SCORE = 20;
   const SEAT_LABELS = ["东", "南", "西", "北"];
+  const appState = {
+    session: null,
+    lastRound: null,
+    scoreboardExpanded: false,
+  };
 
   const FAN_TYPES = [
     { id: "putong", name: "普通胡", score: 2 },
@@ -97,7 +102,10 @@
     document.getElementById("session-setup").classList.add("hidden");
     document.getElementById("game-panel").classList.remove("hidden");
 
-    const state = { session, scoreboardExpanded: false };
+    const state = appState;
+    state.session = session;
+    state.lastRound = null;
+    state.scoreboardExpanded = false;
     renderTablePlayersRow(state);
     renderScoreboard(state);
     renderWinForm(state);
@@ -292,8 +300,9 @@
   function bindChickenModeTabs() {
     const modeInput = document.querySelector('#win-form input[name="chickenMode"]');
     const tabs = document.querySelectorAll(".chicken-mode-tabs .tab");
-    if (!modeInput || !tabs.length) return;
+    if (!modeInput || !tabs.length || tabs[0].dataset.bound) return;
     tabs.forEach((btn) => {
+      btn.dataset.bound = "1";
       btn.addEventListener("click", () => {
         const val = btn.dataset.chicken;
         modeInput.value = val;
@@ -505,25 +514,34 @@
   }
 
   function bindKongButtons(state) {
-    document.getElementById("add-kong-btn")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      const tablePlayers = getTablePlayers(state);
-      const list = document.getElementById("kong-list");
-      if (list) appendKongItem(list, tablePlayers, state.session.players);
-      renderRoundSummary(state);
-    });
-    document.getElementById("add-liuju-kong-btn")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      const tablePlayers = getTablePlayers(state);
-      const list = document.getElementById("liuju-kong-list");
-      if (list) appendKongItem(list, tablePlayers, state.session.players);
-      renderRoundSummary(state);
-    });
+    const addKongBtn = document.getElementById("add-kong-btn");
+    if (addKongBtn && !addKongBtn.dataset.bound) {
+      addKongBtn.dataset.bound = "1";
+      addKongBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const tablePlayers = getTablePlayers(state);
+        const list = document.getElementById("kong-list");
+        if (list) appendKongItem(list, tablePlayers, state.session.players);
+        renderRoundSummary(state);
+      });
+    }
+    const addLiujuKongBtn = document.getElementById("add-liuju-kong-btn");
+    if (addLiujuKongBtn && !addLiujuKongBtn.dataset.bound) {
+      addLiujuKongBtn.dataset.bound = "1";
+      addLiujuKongBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const tablePlayers = getTablePlayers(state);
+        const list = document.getElementById("liuju-kong-list");
+        if (list) appendKongItem(list, tablePlayers, state.session.players);
+        renderRoundSummary(state);
+      });
+    }
   }
 
   function bindLiveSummary(state) {
     const panel = document.querySelector(".round-entry");
-    if (!panel) return;
+    if (!panel || panel.dataset.summaryBound) return;
+    panel.dataset.summaryBound = "1";
     const schedule = () => window.requestAnimationFrame(() => renderRoundSummary(state));
     panel.addEventListener("change", schedule);
     panel.addEventListener("input", schedule);
@@ -605,7 +623,10 @@
   }
 
   function bindChickenToggle(state) {
-    document.getElementById("win-form")?.addEventListener("change", (e) => {
+    const form = document.getElementById("win-form");
+    if (!form || form.dataset.chickenToggleBound) return;
+    form.dataset.chickenToggleBound = "1";
+    form.addEventListener("change", (e) => {
       if (e.target.name === "winner") {
         updateFanSelects(state);
         updatePenaltyInputs(state);
@@ -617,7 +638,8 @@
     const row = document.querySelector(".penalty-row");
     const modeInput = document.querySelector('#win-form input[name="penaltyMode"]');
     const tabs = document.getElementById("penalty-mode-tabs");
-    if (!row || !modeInput || !tabs) return;
+    if (!row || !modeInput || !tabs || tabs.dataset.bound) return;
+    tabs.dataset.bound = "1";
     tabs.querySelectorAll(".tab").forEach((btn) => {
       btn.addEventListener("click", () => {
         const val = btn.dataset.penalty;
@@ -630,7 +652,10 @@
   }
 
   function bindRoundTypeTabs(state) {
-    document.querySelectorAll(".round-type-tabs .tab").forEach((btn) => {
+    const tabs = document.querySelectorAll(".round-type-tabs .tab");
+    if (!tabs.length || tabs[0].dataset.bound) return;
+    tabs.forEach((btn) => {
+      btn.dataset.bound = "1";
       btn.addEventListener("click", () => {
         const type = btn.dataset.type;
         document.querySelectorAll(".round-type-tabs .tab").forEach((b) => b.classList.remove("active"));
@@ -662,7 +687,10 @@
         .filter(Boolean)
         .join("");
     };
-    document.querySelectorAll(".win-type-tabs .tab").forEach((btn) => {
+    const tabs = document.querySelectorAll(".win-type-tabs .tab");
+    if (tabs.length && tabs[0].dataset.bound) return;
+    tabs.forEach((btn) => {
+      btn.dataset.bound = "1";
       btn.addEventListener("click", () => {
         const val = btn.dataset.wintype;
         winTypeInput.value = val;
@@ -673,9 +701,13 @@
       });
     });
     document.querySelector(".win-type-tabs .tab[data-wintype=zimo]")?.classList.add("active");
-    document.getElementById("win-form")?.addEventListener("change", (e) => {
-      if (e.target.name === "winner" && winTypeInput?.value === "dianpao") updateFeederOptions();
-    });
+    const form = document.getElementById("win-form");
+    if (form && !form.dataset.winTypeBound) {
+      form.dataset.winTypeBound = "1";
+      form.addEventListener("change", (e) => {
+        if (e.target.name === "winner" && winTypeInput?.value === "dianpao") updateFeederOptions();
+      });
+    }
   }
 
   function bindRoundForms(state) {
@@ -710,34 +742,53 @@
       renderRoundSummary(state);
     };
 
-    document.getElementById("win-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const round = collectWinFormData(state.session);
-      if (!round) return;
-      state.lastRound = round;
-      state.session.rounds.push(round);
-      saveSession(state.session);
-      showRoundResult(state);
-      renderHistory(state);
-      checkGameOver(state);
-    });
+    const winForm = document.getElementById("win-form");
+    if (winForm && !winForm.dataset.submitBound) {
+      winForm.dataset.submitBound = "1";
+      winForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const round = collectWinFormData(state.session);
+        if (!round) return;
+        state.lastRound = round;
+        state.session.rounds.push(round);
+        saveSession(state.session);
+        showRoundResult(state);
+        renderHistory(state);
+        checkGameOver(state);
+      });
+    }
 
-    document.getElementById("liuju-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const round = collectLiujuFormData(state.session);
-      if (!round) return;
-      state.lastRound = round;
-      state.session.rounds.push(round);
-      saveSession(state.session);
-      showRoundResult(state);
-      renderHistory(state);
-      checkGameOver(state);
-    });
+    const liujuForm = document.getElementById("liuju-form");
+    if (liujuForm && !liujuForm.dataset.submitBound) {
+      liujuForm.dataset.submitBound = "1";
+      liujuForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const round = collectLiujuFormData(state.session);
+        if (!round) return;
+        state.lastRound = round;
+        state.session.rounds.push(round);
+        saveSession(state.session);
+        showRoundResult(state);
+        renderHistory(state);
+        checkGameOver(state);
+      });
+    }
 
-    document.getElementById("next-round").addEventListener("click", proceedNextRound);
-    document.getElementById("history-detail-next")?.addEventListener("click", proceedNextRound);
+    const nextBtn = document.getElementById("next-round");
+    if (nextBtn && !nextBtn.dataset.bound) {
+      nextBtn.dataset.bound = "1";
+      nextBtn.addEventListener("click", proceedNextRound);
+    }
+    const detailNextBtn = document.getElementById("history-detail-next");
+    if (detailNextBtn && !detailNextBtn.dataset.bound) {
+      detailNextBtn.dataset.bound = "1";
+      detailNextBtn.addEventListener("click", proceedNextRound);
+    }
 
-    document.getElementById("game-over-confirm").addEventListener("click", () => {
+    const gameOverConfirm = document.getElementById("game-over-confirm");
+    if (gameOverConfirm && !gameOverConfirm.dataset.bound) {
+      gameOverConfirm.dataset.bound = "1";
+      gameOverConfirm.addEventListener("click", () => {
       if (!confirm("确定开始新大局？")) return;
       document.getElementById("game-over-overlay").classList.add("hidden");
       state.session.rounds = [];
@@ -748,19 +799,28 @@
       document.querySelector(".round-result").classList.add("hidden");
       document.querySelector(".round-entry").classList.remove("hidden");
       renderRoundSummary(state);
-    });
+      });
+    }
 
-    document.getElementById("history-detail-close").addEventListener("click", () => {
-      document.getElementById("history-detail-overlay").classList.add("hidden");
-      document.getElementById("history-detail-next")?.classList.add("hidden");
-    });
-
-    document.getElementById("history-detail-overlay").addEventListener("click", (e) => {
-      if (e.target.id === "history-detail-overlay") {
+    const historyDetailClose = document.getElementById("history-detail-close");
+    if (historyDetailClose && !historyDetailClose.dataset.bound) {
+      historyDetailClose.dataset.bound = "1";
+      historyDetailClose.addEventListener("click", () => {
         document.getElementById("history-detail-overlay").classList.add("hidden");
         document.getElementById("history-detail-next")?.classList.add("hidden");
-      }
-    });
+      });
+    }
+
+    const historyOverlay = document.getElementById("history-detail-overlay");
+    if (historyOverlay && !historyOverlay.dataset.bound) {
+      historyOverlay.dataset.bound = "1";
+      historyOverlay.addEventListener("click", (e) => {
+        if (e.target.id === "history-detail-overlay") {
+          document.getElementById("history-detail-overlay").classList.add("hidden");
+          document.getElementById("history-detail-next")?.classList.add("hidden");
+        }
+      });
+    }
 
   }
 
