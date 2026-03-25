@@ -712,9 +712,11 @@
 
   function bindRoundForms(state) {
     const proceedNextRound = () => {
+      const historyOverlay = document.getElementById("history-detail-overlay");
       document.querySelector(".round-result").classList.add("hidden");
       document.querySelector(".round-entry").classList.remove("hidden");
-      document.getElementById("history-detail-overlay").classList.add("hidden");
+      historyOverlay.classList.add("hidden");
+      delete historyOverlay.dataset.mode;
       document.getElementById("history-detail-next")?.classList.add("hidden");
       document.getElementById("win-form").reset();
       document.getElementById("liuju-form").reset();
@@ -806,7 +808,13 @@
     if (historyDetailClose && !historyDetailClose.dataset.bound) {
       historyDetailClose.dataset.bound = "1";
       historyDetailClose.addEventListener("click", () => {
-        document.getElementById("history-detail-overlay").classList.add("hidden");
+        const overlay = document.getElementById("history-detail-overlay");
+        if (overlay?.dataset.mode === "result") {
+          proceedNextRound();
+          return;
+        }
+        overlay.classList.add("hidden");
+        delete overlay.dataset.mode;
         document.getElementById("history-detail-next")?.classList.add("hidden");
       });
     }
@@ -816,7 +824,12 @@
       historyOverlay.dataset.bound = "1";
       historyOverlay.addEventListener("click", (e) => {
         if (e.target.id === "history-detail-overlay") {
+          if (historyOverlay.dataset.mode === "result") {
+            proceedNextRound();
+            return;
+          }
           document.getElementById("history-detail-overlay").classList.add("hidden");
+          delete historyOverlay.dataset.mode;
           document.getElementById("history-detail-next")?.classList.add("hidden");
         }
       });
@@ -944,7 +957,7 @@
     return Array.from(items)
       .map((item) => {
         const kongerSel = item.querySelector("select[name=konger]");
-        const typeSel = item.querySelector("select[name=kongType]");
+        const typeSel = item.querySelector("input[name=kongType]");
         const feederSel = item.querySelector("select[name=kongFeeder]");
         if (!kongerSel || !typeSel) return null;
         const konger = parseInt(kongerSel.value, 10);
@@ -1380,6 +1393,7 @@
     document.getElementById("history-detail-title").textContent = "本局结算";
     document.getElementById("history-detail-content").innerHTML = detailEl.innerHTML;
     document.getElementById("history-detail-next")?.classList.remove("hidden");
+    document.getElementById("history-detail-overlay").dataset.mode = "result";
     document.getElementById("history-detail-overlay").classList.remove("hidden");
     renderScoreboard(state);
   }
@@ -1421,6 +1435,7 @@
         const content = document.getElementById("history-detail-content");
         content.innerHTML = buildDetailHtml(r, session) || `<div class="detail-row">${formatRoundSummary(session, r, idx + 1)}</div>`;
         document.getElementById("history-detail-next")?.classList.add("hidden");
+        document.getElementById("history-detail-overlay").dataset.mode = "history";
         document.getElementById("history-detail-overlay").classList.remove("hidden");
       });
     });
