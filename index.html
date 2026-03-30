@@ -123,7 +123,15 @@
                   <label class="penalty-sublabel">每人缺门张数（非胡牌者）</label>
                   <div id="penalty-inputs" class="chicken-grid"></div>
                 </div>
-                <div class="form-group">
+                <div class="form-group chicken-section">
+                  <label>是否鸡牌</label>
+                  <div class="penalty-tabs" id="chicken-presence-tabs">
+                    <button type="button" class="tab" data-chicken-enabled="yes">是</button>
+                    <button type="button" class="tab active" data-chicken-enabled="no">否</button>
+                  </div>
+                  <input type="hidden" name="chickenEnabled" value="no">
+                </div>
+                <div class="form-group chicken-mode-row hidden">
                   <label>是否金鸡</label>
                   <div class="chicken-mode-tabs">
                     <button type="button" class="tab active" data-chicken="no">否（1分/鸡）</button>
@@ -131,14 +139,19 @@
                   </div>
                   <input type="hidden" name="chickenMode" value="no">
                 </div>
-                <div class="form-group">
-                  <label>每人鸡牌数</label>
-                  <div id="chicken-inputs" class="chicken-grid"></div>
+                <div class="form-group chicken-count-row hidden">
+                  <label class="penalty-sublabel">每人鸡牌数</label>
+                  <div id="chicken-inputs" class="chicken-grid compact-grid"></div>
                 </div>
                 <div class="form-group kong-section">
                   <label>杠牌（可多选）</label>
                   <div id="kong-list" class="kong-list"></div>
                   <button type="button" id="add-kong-btn" class="btn-ghost btn-sm">+ 添加杠牌</button>
+                </div>
+                <div class="form-group special-section">
+                  <label>特殊结算（可多选）</label>
+                  <div id="special-list" class="special-list"></div>
+                  <button type="button" id="add-special-btn" class="btn-ghost btn-sm">+ 添加特殊结算</button>
                 </div>
               </div>
             </details>
@@ -161,6 +174,11 @@
                   <label>杠牌（可多选）</label>
                   <div id="liuju-kong-list" class="kong-list"></div>
                   <button type="button" id="add-liuju-kong-btn" class="btn-ghost btn-sm">+ 添加杠牌</button>
+                </div>
+                <div class="form-group special-section">
+                  <label>特殊结算（可多选）</label>
+                  <div id="liuju-special-list" class="special-list"></div>
+                  <button type="button" id="add-liuju-special-btn" class="btn-ghost btn-sm">+ 添加特殊结算</button>
                 </div>
               </div>
             </details>

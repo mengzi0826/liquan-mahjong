@@ -114,6 +114,7 @@
     bindRoundTypeTabs(state);
     bindWinTypeToggle(state);
     bindPenaltyTabs();
+    bindChickenPresenceTabs();
     bindChickenModeTabs();
     bindChickenToggle(state);
     bindKongButtons(state);
@@ -294,7 +295,11 @@
 
     updateFanSelects(state);
     updateChickenInputs(state);
+    const chickenEnabled = document.querySelector('#win-form input[name="chickenEnabled"]')?.value === "yes";
+    document.querySelector(".chicken-mode-row")?.classList.toggle("hidden", !chickenEnabled);
+    document.querySelector(".chicken-count-row")?.classList.toggle("hidden", !chickenEnabled);
     renderKongList(state, "kong-list", tablePlayers);
+    renderSpecialList(state, "special-list", tablePlayers);
   }
 
   function bindChickenModeTabs() {
@@ -312,6 +317,35 @@
     });
   }
 
+  function bindChickenPresenceTabs() {
+    const enabledInput = document.querySelector('#win-form input[name="chickenEnabled"]');
+    const tabs = document.getElementById("chicken-presence-tabs");
+    const modeRow = document.querySelector(".chicken-mode-row");
+    const countRow = document.querySelector(".chicken-count-row");
+    if (!enabledInput || !tabs || tabs.dataset.bound) return;
+    tabs.dataset.bound = "1";
+    tabs.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const val = btn.dataset.chickenEnabled;
+        enabledInput.value = val;
+        tabs.querySelectorAll(".tab").forEach((node) => node.classList.remove("active"));
+        btn.classList.add("active");
+        const show = val === "yes";
+        modeRow?.classList.toggle("hidden", !show);
+        countRow?.classList.toggle("hidden", !show);
+        if (!show) {
+          document.querySelector('#win-form input[name="chickenMode"]').value = "no";
+          document.querySelectorAll(".chicken-mode-tabs .tab").forEach((node) => {
+            node.classList.toggle("active", node.dataset.chicken === "no");
+          });
+          document.querySelectorAll('#chicken-inputs input[type="number"]').forEach((input) => {
+            input.value = "0";
+          });
+        }
+      });
+    });
+  }
+
   function renderLiujuForm(state) {
     const { session } = state;
     const tablePlayers = getTablePlayers(state);
@@ -323,6 +357,7 @@
       )
       .join("");
     renderKongList(state, "liuju-kong-list", tablePlayers);
+    renderSpecialList(state, "liuju-special-list", tablePlayers);
   }
 
   function renderRoundSummary(state) {
@@ -332,22 +367,17 @@
     const activeType = document.querySelector(".round-type-tabs .tab.active")?.dataset.type || "win";
     let main = "";
     const items = [];
-    const pairItems = (entries) => {
-      const pairs = [];
-      for (let i = 0; i < entries.length; i += 2) {
-        pairs.push(entries.slice(i, i + 2));
-      }
-      return pairs;
-    };
 
     if (activeType === "liuju") {
       const ting = Array.from(document.querySelectorAll('#liuju-ting-checkboxes input[name="ting"]:checked')).map((c) =>
         state.session.players[parseInt(c.value, 10)]
       );
       const liujuKongText = buildKongSummaryText("liuju-kong-list", players);
+      const liujuSpecialText = buildSpecialSummaryText("liuju-special-list", players);
       main = ting.length ? `流局，${ting.join("、")} 听牌` : "流局，待选择听牌者";
       items.push({ label: "听牌", value: ting.length ? ting.join("、") : "待选择" });
       items.push({ label: "杠牌", value: liujuKongText });
+      items.push({ label: "特殊", value: liujuSpecialText });
     } else {
       const tablePlayers = getTablePlayers(state);
       const winType = document.querySelector('#win-form input[name="winType"]')?.value || "zimo";
@@ -357,9 +387,11 @@
       const winnerNames = winners.map((i) => state.session.players[i]);
       const feederIdx = parseInt(document.querySelector('#win-form select[name="feeder"]')?.value, 10);
       const feederName = Number.isNaN(feederIdx) ? "" : state.session.players[feederIdx];
-      const chickenMode = document.querySelector('#win-form input[name="chickenMode"]')?.value === "yes";
+      const chickenEnabled = document.querySelector('#win-form input[name="chickenEnabled"]')?.value === "yes";
+      const chickenMode = chickenEnabled && document.querySelector('#win-form input[name="chickenMode"]')?.value === "yes";
       const penaltyMode = document.querySelector('#win-form input[name="penaltyMode"]')?.value === "yes";
       const kongText = buildKongSummaryText("kong-list", players);
+      const specialText = buildSpecialSummaryText("special-list", players);
       const tianque = Array.from(document.querySelectorAll('#tianque-checkboxes input[name="tianque"]:checked')).map((c) =>
         state.session.players[parseInt(c.value, 10)]
       );
@@ -372,13 +404,15 @@
             })
             .filter(Boolean)
         : [];
-      const chickenEntries = tablePlayers
-        .map((i) => {
-          const input = document.querySelector(`#chicken-inputs input[name="chicken_${i}"]`);
-          const count = parseInt(input?.value, 10) || 0;
-          return count > 0 ? `${state.session.players[i]} ${count}` : null;
-        })
-        .filter(Boolean);
+      const chickenEntries = chickenEnabled
+        ? tablePlayers
+            .map((i) => {
+              const input = document.querySelector(`#chicken-inputs input[name="chicken_${i}"]`);
+              const count = parseInt(input?.value, 10) || 0;
+              return count > 0 ? `${state.session.players[i]} ${count}` : null;
+            })
+            .filter(Boolean)
+        : [];
       const fanEntries = winners
         .map((i) => {
           const fanId = document.querySelector(`#fan-select-container select[name="fan_${i}"]`)?.value;
@@ -399,24 +433,22 @@
       }
       items.push({ label: "天缺", value: tianque.length ? tianque.join("、") : "无" });
       items.push({ label: "查缺", value: penaltyMode ? "是" : "否" });
-      items.push({ label: "金鸡", value: chickenMode ? "是" : "否" });
       items.push({ label: "缺门", value: penaltyEntries.length ? penaltyEntries.join("、") : "无" });
-      items.push({ label: "鸡牌", value: chickenEntries.length ? chickenEntries.join("、") : "无" });
+      items.push({ label: "鸡牌", value: chickenEnabled ? "是" : "否" });
+      items.push({ label: "金鸡", value: chickenEnabled ? (chickenMode ? "是" : "否") : "无" });
+      items.push({ label: "鸡数", value: chickenEntries.length ? chickenEntries.join("、") : "无" });
       items.push({ label: "杠牌", value: kongText });
+      items.push({ label: "特殊", value: specialText });
     }
 
     el.innerHTML = `
       <p class="round-summary-title">当前录入摘要</p>
       <p class="round-summary-main">${escapeHtml(main)}</p>
       <div class="round-summary-list">
-        ${pairItems(items).map((group) => `
-          <div class="round-summary-row">
-            ${group.map((row) => `
-              <div class="summary-cell">
-                <span class="summary-label">${escapeHtml(row.label)}</span>
-                <span class="summary-value">${escapeHtml(row.value)}</span>
-              </div>
-            `).join("")}
+        ${items.map((row) => `
+          <div class="summary-cell">
+            <span class="summary-label">${escapeHtml(row.label)}</span>
+            <span class="summary-value">${escapeHtml(row.value)}</span>
           </div>
         `).join("")}
       </div>
@@ -440,6 +472,28 @@
         }
         return `${kongerName} 自杠`;
       })
+      .join("、");
+  }
+
+  function collectSpecials(listId) {
+    const list = document.getElementById(listId);
+    if (!list) return [];
+    return Array.from(list.querySelectorAll(".special-item"))
+      .map((item) => {
+        const from = parseInt(item.querySelector('select[name="specialFrom"]')?.value, 10);
+        const to = parseInt(item.querySelector('select[name="specialTo"]')?.value, 10);
+        const amount = parseInt(item.querySelector('input[name="specialAmount"]')?.value, 10) || 0;
+        if (Number.isNaN(from) || Number.isNaN(to) || from === to || amount <= 0) return null;
+        return { from, to, amount };
+      })
+      .filter(Boolean);
+  }
+
+  function buildSpecialSummaryText(listId, players) {
+    const rows = collectSpecials(listId);
+    if (!rows.length) return "无";
+    return rows
+      .map((row) => `${players[row.from]} 付 ${players[row.to]} ${row.amount}分`)
       .join("、");
   }
 
@@ -491,6 +545,32 @@
     listEl.appendChild(item);
   }
 
+  function appendSpecialItem(listEl, tablePlayers, players) {
+    const opts = tablePlayers.map((i) => `<option value="${i}">${players[i]}</option>`).join("");
+    const item = document.createElement("div");
+    item.className = "special-item";
+    item.innerHTML = `
+      <div class="special-main">
+        <label class="special-field special-inline">
+          <span class="special-inline-text">由</span>
+          <select name="specialFrom">${opts}</select>
+        </label>
+        <label class="special-field special-inline">
+          <span class="special-inline-text">付给</span>
+          <select name="specialTo">${opts}</select>
+        </label>
+        <label class="special-field special-inline special-amount-field">
+          <span class="special-inline-text">分数</span>
+          <input type="number" name="specialAmount" min="1" step="1" value="1">
+          <span class="special-inline-text">分</span>
+        </label>
+      </div>
+      <button type="button" class="btn-remove btn-ghost">删除</button>
+    `;
+    item.querySelector(".btn-remove").addEventListener("click", () => item.remove());
+    listEl.appendChild(item);
+  }
+
   function renderKongList(state, listId, tablePlayers) {
     const listEl = document.getElementById(listId);
     if (!listEl) return;
@@ -510,6 +590,21 @@
         row.querySelector(".kong-feeder-field")?.classList.remove("hidden");
         feederSel.value = String(kong.feeder);
       }
+    });
+  }
+
+  function renderSpecialList(state, listId, tablePlayers) {
+    const listEl = document.getElementById(listId);
+    if (!listEl) return;
+    const current = collectSpecials(listId).filter((item) => tablePlayers.includes(item.from) && tablePlayers.includes(item.to));
+    listEl.innerHTML = "";
+    current.forEach((special) => {
+      appendSpecialItem(listEl, tablePlayers, state.session.players);
+      const row = listEl.lastElementChild;
+      if (!row) return;
+      row.querySelector('select[name="specialFrom"]').value = String(special.from);
+      row.querySelector('select[name="specialTo"]').value = String(special.to);
+      row.querySelector('input[name="specialAmount"]').value = String(special.amount);
     });
   }
 
@@ -533,6 +628,28 @@
         const tablePlayers = getTablePlayers(state);
         const list = document.getElementById("liuju-kong-list");
         if (list) appendKongItem(list, tablePlayers, state.session.players);
+        renderRoundSummary(state);
+      });
+    }
+    const addSpecialBtn = document.getElementById("add-special-btn");
+    if (addSpecialBtn && !addSpecialBtn.dataset.bound) {
+      addSpecialBtn.dataset.bound = "1";
+      addSpecialBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const tablePlayers = getTablePlayers(state);
+        const list = document.getElementById("special-list");
+        if (list) appendSpecialItem(list, tablePlayers, state.session.players);
+        renderRoundSummary(state);
+      });
+    }
+    const addLiujuSpecialBtn = document.getElementById("add-liuju-special-btn");
+    if (addLiujuSpecialBtn && !addLiujuSpecialBtn.dataset.bound) {
+      addLiujuSpecialBtn.dataset.bound = "1";
+      addLiujuSpecialBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const tablePlayers = getTablePlayers(state);
+        const list = document.getElementById("liuju-special-list");
+        if (list) appendSpecialItem(list, tablePlayers, state.session.players);
         renderRoundSummary(state);
       });
     }
@@ -722,6 +839,8 @@
       document.getElementById("liuju-form").reset();
       document.getElementById("kong-list").innerHTML = "";
       document.getElementById("liuju-kong-list").innerHTML = "";
+      document.getElementById("special-list").innerHTML = "";
+      document.getElementById("liuju-special-list").innerHTML = "";
       document.querySelector(".round-type-tabs .tab[data-type=win]").classList.add("active");
       document.querySelector(".round-type-tabs .tab[data-type=liuju]").classList.remove("active");
       document.getElementById("win-form").classList.remove("hidden");
@@ -731,6 +850,12 @@
       document.querySelector(".penalty-tabs .tab[data-penalty=no]")?.classList.add("active");
       document.querySelector(".penalty-tabs .tab[data-penalty=yes]")?.classList.remove("active");
       document.querySelector('#win-form input[name="penaltyMode"]').value = "no";
+      document.querySelector(".chicken-mode-row")?.classList.add("hidden");
+      document.querySelector(".chicken-count-row")?.classList.add("hidden");
+      document.querySelector('#win-form input[name="chickenEnabled"]').value = "no";
+      document.querySelectorAll("#chicken-presence-tabs .tab").forEach((b) => {
+        b.classList.toggle("active", b.dataset.chickenEnabled === "no");
+      });
       document.querySelectorAll(".win-type-tabs .tab").forEach((b) => b.classList.remove("active"));
       document.querySelector(".win-type-tabs .tab[data-wintype=zimo]")?.classList.add("active");
       document.querySelector("#win-form input[name=winType]").value = "zimo";
@@ -893,6 +1018,11 @@
       html += round.detail.chickenBreakdown.map((l) => `<div class="detail-row">${l}</div>`).join("");
       html += "</div>";
     }
+    if (round.detail.specialBreakdown && round.detail.specialBreakdown.length) {
+      html += `<div class="detail-section">`;
+      html += round.detail.specialBreakdown.map((l) => `<div class="detail-row">${l}</div>`).join("");
+      html += "</div>";
+    }
     if (round.detail.playerBreakdown && round.detail.playerBreakdown.length) {
       html += `<div class="detail-section"><strong>每人明细</strong></div>`;
       round.detail.playerBreakdown.forEach((p) => {
@@ -986,8 +1116,9 @@
     );
     const winType = form.elements.winType.value;
     const feeder = winType === "dianpao" ? parseInt(form.elements.feeder?.value, 10) : null;
+    const chickenEnabled = form.elements.chickenEnabled?.value === "yes";
     const chickenCountsRaw = [...Array(n)].map((_, i) =>
-      parseInt(form.elements["chicken_" + i]?.value, 10) || 0
+      chickenEnabled ? (parseInt(form.elements["chicken_" + i]?.value, 10) || 0) : 0
     );
     const ting = [...new Set([
       ...winners,
@@ -1025,7 +1156,7 @@
       ? [...Array(n)].map((_, i) => parseInt(form.elements["penalty_" + i]?.value, 10) || 0)
       : [...Array(n)].fill(0);
     const chickenCounts = chickenCountsRaw;
-    const multiplier = form.elements.chickenMode?.value === "yes" ? 2 : 1;
+    const multiplier = chickenEnabled && form.elements.chickenMode?.value === "yes" ? 2 : 1;
 
     const winnerFans = winners.map((i) => {
       const fanId = form.elements["fan_" + i]?.value;
@@ -1033,6 +1164,7 @@
       return { winner: i, fanId: fanId || "putong", score: f ? f.score : 2 };
     });
     const kongs = collectKongs("kong-list");
+    const specials = collectSpecials("special-list");
     const totalsBefore = getTotals(session);
 
     const scores = calcWinRound({
@@ -1050,6 +1182,7 @@
       chickenCounts,
       multiplier,
       kongs,
+      specials,
     });
 
     const baseBreakdown = [];
@@ -1075,6 +1208,9 @@
         kongBreakdown.push(`放杠：${session.players[k.konger]} 收 ${session.players[k.feeder]} 2分`);
       }
     });
+    const specialBreakdown = specials.map((item) =>
+      `特殊结算：${session.players[item.from]} 付 ${session.players[item.to]} ${item.amount}分`
+    );
 
     const chickenBreakdown = [];
     const chickenDesc = multiplier > 1 ? "金鸡×2" : "1分/鸡";
@@ -1102,6 +1238,7 @@
       chickenCounts,
       multiplier,
       kongs,
+      specials,
       scores,
     });
 
@@ -1119,25 +1256,25 @@
       ting,
       chickenCounts,
       kongs,
+      specials,
       scores,
-      detail: { baseBreakdown, kongBreakdown, chickenBreakdown, playerBreakdown },
+      detail: { baseBreakdown, kongBreakdown, chickenBreakdown, specialBreakdown, playerBreakdown },
     };
   }
 
   function buildWinPlayerBreakdown(params) {
-    const { session, n, tablePlayers, winners, winType, feeder, winnerFans, tianque, penaltyCounts, ting, chickenCounts, multiplier, kongs, scores } = params;
+    const { session, n, tablePlayers, winners, winType, feeder, winnerFans, tianque, penaltyCounts, ting, chickenCounts, multiplier, kongs, specials = [], scores } = params;
     const table = tablePlayers || [0, 1, 2, 3];
     const totalBasePerWinner = winners.map((w) => {
       const fan = winnerFans.find((x) => x.winner === w);
       return fan ? fan.score : 2;
     });
-    const payers = winType === "zimo"
+    const fanPayers = winType === "zimo"
       ? table.filter((i) => i !== winners[0])
       : [feeder];
+    const penaltyPayers = table.filter((i) => !winners.includes(i));
     const payPerPerson = winType === "zimo" ? totalBasePerWinner[0] : totalBasePerWinner.reduce((s, t) => s + t, 0);
-    const winnerPenaltyReceive = winType === "zimo"
-      ? payers.reduce((s, p) => s + (penaltyCounts[p] || 0), 0)
-      : (penaltyCounts[feeder] || 0);
+    const winnerPenaltyReceive = penaltyPayers.reduce((s, p) => s + (penaltyCounts[p] || 0), 0);
 
     return table.map((i) => {
       const name = session.players[i];
@@ -1145,17 +1282,17 @@
       const winnerIdx = winners.indexOf(i);
       if (winnerIdx >= 0) {
         const winnerReceive = winType === "zimo"
-          ? totalBasePerWinner[winnerIdx] * payers.length
+          ? totalBasePerWinner[winnerIdx] * fanPayers.length
           : totalBasePerWinner[winnerIdx];
         items.push(`收番型: +${winnerReceive}`);
         if (winnerIdx === 0 && winnerPenaltyReceive > 0) {
           items.push(`收查缺: +${winnerPenaltyReceive}`);
         }
-      } else if (payers.includes(i)) {
+      } else if (fanPayers.includes(i)) {
         items.push(`付番型: -${payPerPerson}`);
-        if (penaltyCounts && penaltyCounts[i] > 0) {
-          items.push(`付查缺: -${penaltyCounts[i]}`);
-        }
+      }
+      if (!winners.includes(i) && penaltyCounts && penaltyCounts[i] > 0) {
+        items.push(`付查缺: -${penaltyCounts[i]}`);
       }
       if (tianque && tianque.includes(i)) {
         const notTianqueCount = table.filter((j) => !tianque.includes(j)).length;
@@ -1187,6 +1324,12 @@
           }
         }
       }
+      if (specials.length) {
+        specials.forEach((item) => {
+          if (item.from === i) items.push(`付特殊结算: -${item.amount}`);
+          else if (item.to === i) items.push(`收特殊结算: +${item.amount}`);
+        });
+      }
       const score = scores ? scores[i] : 0;
       items.push(`小计: ${score >= 0 ? "+" : ""}${score}`);
       return { name, items };
@@ -1216,6 +1359,7 @@
       chickenCounts,
       multiplier,
       kongs = [],
+      specials = [],
     } = params;
 
     const bal = totalsBefore.length === n ? [...totalsBefore] : [...Array(n)].fill(session?.initialScore ?? INITIAL_SCORE);
@@ -1256,7 +1400,8 @@
       const payers = tablePlayers.filter((i) => i !== winner);
       payers.forEach((i) => payCap(bal, i, winner, penaltyCounts[i] || 0));
     } else {
-      payCap(bal, feeder, winners[0], penaltyCounts[feeder] || 0);
+      const penaltyPayers = tablePlayers.filter((i) => !winners.includes(i));
+      penaltyPayers.forEach((i) => payCap(bal, i, winners[0], penaltyCounts[i] || 0));
     }
 
     for (const i of tablePlayers) {
@@ -1265,6 +1410,10 @@
       for (const j of tablePlayers) {
         if (j !== i) payCap(bal, j, i, chickenPerPerson);
       }
+    }
+
+    for (const item of specials) {
+      payCap(bal, item.from, item.to, item.amount);
     }
 
     const base = session?.initialScore ?? INITIAL_SCORE;
@@ -1284,8 +1433,9 @@
       parseInt(c.value, 10)
     );
     const kongs = collectKongs("liuju-kong-list");
+    const specials = collectSpecials("liuju-special-list");
     const totalsBefore = getTotals(session);
-    const scores = calcLiujuRound(n, session, totalsBefore, ting, tablePlayers, kongs);
+    const scores = calcLiujuRound(n, session, totalsBefore, ting, tablePlayers, kongs, specials);
 
     const notTing = tablePlayers.filter((i) => !ting.includes(i));
     const baseBreakdown = [
@@ -1297,6 +1447,9 @@
       if (k.type === "zigang") return `自杠：${session.players[k.konger]} 其余3人各付2分`;
       return `放杠：${session.players[k.konger]} 收 ${session.players[k.feeder]} 2分`;
     });
+    const specialBreakdown = specials.map((item) =>
+      `特殊结算：${session.players[item.from]} 付 ${session.players[item.to]} ${item.amount}分`
+    );
 
     const playerBreakdown = session.players.map((name, i) => {
       const items = [];
@@ -1320,6 +1473,12 @@
           }
         }
       }
+      if (specials.length) {
+        specials.forEach((item) => {
+          if (item.from === i) items.push(`付特殊结算: -${item.amount}`);
+          else if (item.to === i) items.push(`收特殊结算: +${item.amount}`);
+        });
+      }
       items.push(`小计：${scores[i] >= 0 ? "+" : ""}${scores[i]}`);
       return { name, items };
     });
@@ -1329,12 +1488,13 @@
       tablePlayers,
       ting,
       kongs,
+      specials,
       scores,
-      detail: { baseBreakdown, kongBreakdown, playerBreakdown },
+      detail: { baseBreakdown, kongBreakdown, specialBreakdown, playerBreakdown },
     };
   }
 
-  function calcLiujuRound(n, session, totalsBefore, ting, tablePlayers = [0, 1, 2, 3], kongs = []) {
+  function calcLiujuRound(n, session, totalsBefore, ting, tablePlayers = [0, 1, 2, 3], kongs = [], specials = []) {
     const base = session?.initialScore ?? INITIAL_SCORE;
     const bal = totalsBefore.length === n ? [...totalsBefore] : [...Array(n)].fill(base);
 
@@ -1352,6 +1512,10 @@
       for (const j of ting) {
         payCap(bal, i, j, 2);
       }
+    }
+
+    for (const item of specials) {
+      payCap(bal, item.from, item.to, item.amount);
     }
 
     return bal.map((b, i) => b - (totalsBefore[i] ?? base));
@@ -1447,5 +1611,17 @@
     return div.innerHTML;
   }
 
-  init();
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+      INITIAL_SCORE,
+      FAN_TYPES,
+      payCap,
+      calcWinRound,
+      calcLiujuRound,
+    };
+  }
+
+  if (typeof document !== "undefined") {
+    init();
+  }
 })();
