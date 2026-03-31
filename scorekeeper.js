@@ -508,7 +508,6 @@
           <select name="konger">${opts}</select>
         </label>
         <div class="kong-field">
-          <span class="kong-label">杠类型</span>
           <div class="kong-type-toggle">
             <button type="button" class="tab active" data-kong-type="zigang">自杠</button>
             <button type="button" class="tab" data-kong-type="fanggang">放杠</button>
@@ -562,7 +561,6 @@
         <label class="special-field special-inline special-amount-field">
           <span class="special-inline-text">分数</span>
           <input type="number" name="specialAmount" min="1" step="1" value="1">
-          <span class="special-inline-text">分</span>
         </label>
       </div>
       <button type="button" class="btn-remove btn-ghost">删除</button>

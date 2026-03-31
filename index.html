@@ -18,6 +18,12 @@
           <div class="logo-copy">
             <h1>礼泉翻鸡计分器</h1>
             <p class="app-tagline">牌桌边就能快速记一局，算得清，也看得清</p>
+            <div class="table-legend" aria-hidden="true">
+              <span>东</span>
+              <span>南</span>
+              <span>西</span>
+              <span>北</span>
+            </div>
           </div>
         </div>
       </div>
@@ -25,7 +31,10 @@
 
     <main class="app-main">
       <section id="session-setup" class="panel setup-panel">
-        <h2>新建对局</h2>
+        <div class="panel-title-row">
+          <h2>新建对局</h2>
+          <span class="panel-badge">起局</span>
+        </div>
         <form id="new-session-form">
           <div class="form-row">
             <label>人数</label>
@@ -68,7 +77,10 @@
         </div>
 
         <div class="round-entry panel">
-          <h2>本局录入</h2>
+          <div class="panel-title-row">
+            <h2>本局录入</h2>
+            <span class="panel-badge">记分</span>
+          </div>
           <div id="table-players-row" class="form-group table-players-row hidden">
             <label>本局上场座位（东南西北）</label>
             <div id="table-player-seats" class="seat-grid"></div>
@@ -187,7 +199,10 @@
         </div>
 
         <div class="round-result panel hidden">
-          <h2>本局得分</h2>
+          <div class="panel-title-row">
+            <h2>本局得分</h2>
+            <span class="panel-badge">结果</span>
+          </div>
           <div id="round-scores" class="score-grid"></div>
           <div id="round-detail" class="round-detail"></div>
           <button type="button" id="next-round" class="btn-primary">下一局</button>
@@ -196,7 +211,10 @@
         <div class="history-panel panel">
           <div class="history-header">
             <div>
-              <h2>历史记录</h2>
+              <div class="panel-title-row">
+                <h2>历史记录</h2>
+                <span class="panel-badge">牌谱</span>
+              </div>
               <p class="history-subtitle">最近结算会显示核心分数变化</p>
             </div>
             <button type="button" id="undo-round-btn" class="btn-ghost btn-danger">撤销上一局</button>
