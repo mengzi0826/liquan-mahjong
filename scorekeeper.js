@@ -164,12 +164,10 @@
       const options = state.session.players
         .map((name, playerIdx) => `<option value="${playerIdx}" ${current[seatIdx] === playerIdx ? "selected" : ""}>${escapeHtml(name)}</option>`)
         .join("");
-      return `<div class="seat-card">
-        <span class="seat-badge">${seat}位</span>
-        <div class="seat-preview">${escapeHtml(state.session.players[current[seatIdx]] || "")}</div>
-        <label>选择玩家</label>
+      return `<label class="seat-inline-item">
+        <span class="seat-label">${seat}</span>
         <select name="seatPlayer_${seatIdx}">${options}</select>
-      </div>`;
+      </label>`;
     }).join("");
     if (!container.dataset.bound) {
       container.dataset.bound = "1";
@@ -202,14 +200,7 @@
     });
   }
 
-  function syncSeatPreview(container, players) {
-    Array.from(container.querySelectorAll(".seat-card")).forEach((card, idx) => {
-      const select = card.querySelector(`select[name="seatPlayer_${idx}"]`);
-      const preview = card.querySelector(".seat-preview");
-      if (!select || !preview) return;
-      preview.textContent = players[parseInt(select.value, 10)] || "";
-    });
-  }
+  function syncSeatPreview(container, players) {}
 
   function getTotals(session) {
     const n = session.players.length;
@@ -233,7 +224,9 @@
     const details = document.getElementById("scoreboard-details");
     const toggleBtn = document.getElementById("scoreboard-toggle-btn");
     if (details) details.classList.toggle("hidden", !state.scoreboardExpanded);
-    if (toggleBtn) toggleBtn.textContent = state.scoreboardExpanded ? "收起四家积分" : "展开四家积分";
+    const cnNums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+    const numStr = cnNums[session.players.length - 1] || session.players.length.toString();
+    if (toggleBtn) toggleBtn.textContent = state.scoreboardExpanded ? `收起${numStr}家积分` : `展开${numStr}家积分`;
 
     const sorted = totals.map((s, i) => ({ s, i })).sort((a, b) => b.s - a.s);
     const ranks = Array(totals.length);
@@ -1090,7 +1083,7 @@
     return table
       .filter((i) => (round.scores[i] || 0) !== 0)
       .sort((a, b) => (round.scores[b] || 0) - (round.scores[a] || 0))
-      .slice(0, 4)
+      .slice(0, table.length)
       .map((i) => {
         const score = round.scores[i] || 0;
         return `<span class="mini-score ${deltaClass(score)}">${escapeHtml(session.players[i])} ${score > 0 ? "+" : ""}${score}</span>`;
