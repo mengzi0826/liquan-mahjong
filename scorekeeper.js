@@ -234,22 +234,34 @@
     const toggleBtn = document.getElementById("scoreboard-toggle-btn");
     if (details) details.classList.toggle("hidden", !state.scoreboardExpanded);
     if (toggleBtn) toggleBtn.textContent = state.scoreboardExpanded ? "收起四家积分" : "展开四家积分";
+
+    const sorted = totals.map((s, i) => ({ s, i })).sort((a, b) => b.s - a.s);
+    const ranks = Array(totals.length);
+    sorted.forEach(({ i }, rank) => { ranks[i] = rank + 1; });
+
     const el = document.getElementById("total-scores");
-    el.innerHTML = totals
-      .map((score, i) => {
+    el.innerHTML = sorted
+      .map(({ i }) => {
+        const score = totals[i];
         const delta = latestRound ? latestRound.scores[i] || 0 : 0;
         const seat = seatAssignments.find((item) => item.playerIndex === i)?.seat;
+        const rank = ranks[i];
         let cls = "score-item";
         if (score <= 0) cls += " danger busted";
         else if (score > 0) cls += " positive";
         else cls += " negative";
-        return `<div class="${cls}">
-          <div class="score-top">
-            <span class="name">${escapeHtml(session.players[i])}</span>
-            <span class="seat-tag">${seat ? `${seat}位` : `P${i + 1}`}</span>
+        return `<div class="${cls}" data-rank="${rank}">
+          <span class="score-rank">#${rank}</span>
+          <div class="score-body">
+            <div class="score-top">
+              <span class="name">${escapeHtml(session.players[i])}</span>
+              <span class="seat-tag">${seat ? `${seat}位` : `P${i + 1}`}</span>
+            </div>
+            <div class="score-foot">
+              <span class="value">${score}</span>
+              <span class="delta ${deltaClass(delta)}">${deltaLabel(delta)}</span>
+            </div>
           </div>
-          <span class="value">${score}</span>
-          <span class="delta ${deltaClass(delta)}">${deltaLabel(delta)}</span>
         </div>`;
       })
       .join("");
@@ -972,18 +984,26 @@
     const totals = getTotals(session);
     const seatAssignments = getSeatAssignments(state);
     const el = document.getElementById("game-over-scores");
-    el.innerHTML = totals
-      .map((score, i) => {
+    const sortedGO = totals.map((s, i) => ({ s, i })).sort((a, b) => b.s - a.s);
+    const ranksGO = Array(totals.length);
+    sortedGO.forEach(({ i }, rank) => { ranksGO[i] = rank + 1; });
+    el.innerHTML = sortedGO
+      .map(({ i }) => {
+        const score = totals[i];
         const seat = seatAssignments.find((item) => item.playerIndex === i)?.seat;
+        const rank = ranksGO[i];
         let cls = "score-item";
         if (score <= 0) cls += " danger busted";
         else cls += score > 0 ? " positive" : " negative";
-        return `<div class="${cls}">
-          <div class="score-top">
-            <span class="name">${escapeHtml(session.players[i])}</span>
-            <span class="seat-tag">${seat ? `${seat}位` : `P${i + 1}`}</span>
+        return `<div class="${cls}" data-rank="${rank}">
+          <span class="score-rank">#${rank}</span>
+          <div class="score-body">
+            <div class="score-top">
+              <span class="name">${escapeHtml(session.players[i])}</span>
+              <span class="seat-tag">${seat ? `${seat}位` : `P${i + 1}`}</span>
+            </div>
+            <span class="value">${score}</span>
           </div>
-          <span class="value">${score}</span>
         </div>`;
       })
       .join("");
@@ -1537,11 +1557,13 @@
         else if (s < 0) cls += " negative";
         else cls += " zero";
         return `<div class="${cls}">
-          <div class="score-top">
-            <span class="name">${escapeHtml(session.players[i])}</span>
-            <span class="seat-tag">${seat ? `${seat}位` : "本局"}</span>
+          <div class="score-body">
+            <div class="score-top">
+              <span class="name">${escapeHtml(session.players[i])}</span>
+              <span class="seat-tag">${seat ? `${seat}位` : "本局"}</span>
+            </div>
+            <span class="value">${s >= 0 ? "+" : ""}${s}</span>
           </div>
-          <span class="value">${s >= 0 ? "+" : ""}${s}</span>
         </div>`;
       })
       .join("");
@@ -1574,7 +1596,7 @@
         const summary = formatRoundSummary(session, r, idx + 1);
         const typeTag = r.type === "win" ? (r.winType === "zimo" ? "胡牌" : "点炮") : "流局";
         const miniScores = buildHistoryScores(session, r) || `<span class="mini-score">本局分数全为 0</span>`;
-        return `<div class="history-item" data-idx="${idx}">
+        return `<div class="history-item" data-idx="${idx}" data-type="${r.type}" data-wintype="${r.winType || ''}">
           <span class="summary">
             <span class="history-top">
               <span class="history-title">${summary}</span>
